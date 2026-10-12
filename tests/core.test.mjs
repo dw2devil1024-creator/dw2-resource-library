@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments,migrateLegacyWorldFolders,suppressAutoGroup,unsuppressAutoGroup} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -188,3 +188,82 @@ assert.ok(worldPlan.groups[0].values.every(key=>key.startsWith('worldbook:')));
 applySmartGroups(smartRecord,worldPlan);
 assert.equal(groupOptions(optionsForSelect(fakeWorldSelect(['【古风】皇宫','【古风】大周'])),smartRecord).find(g=>g.name==='古风').items.length,2);
 console.log('DW2 Resource Library: deleting and reordering lorebooks preserves stable folders, with cautious legacy migration');
+
+
+// v0.1.9: deleting a lorebook folder must NEVER resurrect it from the
+// retired world:global archive after TT reload.
+const resurrection=createEmptyState();
+resurrection.resources['world:global']={
+  groups:[{id:'old-ghost',name:'鬼魂分类'}],
+  assignments:{'worldbook:鬼魂书':'old-ghost'},
+};
+resurrection.resources['world:editor']={
+  groups:[{id:'keep',name:'保留组'},{id:'old-ghost',name:'鬼魂分类'}],
+  assignments:{'worldbook:保留书':'keep','worldbook:鬼魂书':'old-ghost'},
+};
+assert.equal(migrateLegacyWorldFolders(resurrection),true);
+assert.equal(resurrection.legacyWorldMergeDone,true);
+const editor=resurrection.resources['world:editor'];
+editor.groups=editor.groups.filter(g=>g.id!=='old-ghost');
+delete editor.assignments['worldbook:鬼魂书'];
+suppressAutoGroup(editor,'鬼魂分类');
+const restarted=normalizeState(JSON.parse(JSON.stringify(resurrection)));
+assert.equal(migrateLegacyWorldFolders(restarted),false);
+assert.deepEqual(restarted.resources['world:editor'].groups,[{id:'keep',name:'保留组'}]);
+assert.equal(restarted.resources['world:editor'].assignments['worldbook:鬼魂书'],undefined);
+assert.equal(restarted.resources['world:global'].groups[0].name,'鬼魂分类'); // backup untouched
+assert.deepEqual(restarted.resources['world:editor'].suppressedAutoGroups,['鬼魂分类']);
+const again=normalizeState(JSON.parse(JSON.stringify(restarted)));
+assert.equal(migrateLegacyWorldFolders(again),false);
+assert.deepEqual(again.resources['world:editor'].groups,[{id:'keep',name:'保留组'}]);
+// Completely empty editor is deliberate deletion, not permission to merge.
+again.resources['world:editor']={groups:[],assignments:{},suppressedAutoGroups:[]};
+again.legacyWorldMergeDone=false; // simulate upgrade from old 0.1.8 user data
+assert.equal(migrateLegacyWorldFolders(again),true);
+assert.equal(again.resources['world:editor'].groups.length,0);
+
+// Legacy-only installation (no editor at all) is migrated exactly once.
+const legacyOnly=createEmptyState();
+legacyOnly.resources['world:global']={
+  groups:[{id:'ancient',name:'古风'}],
+  assignments:{'worldbook:古籍':'ancient'},suppressedAutoGroups:[]
+};
+assert.equal(migrateLegacyWorldFolders(legacyOnly),true);
+assert.equal(legacyOnly.resources['world:editor'].groups[0].name,'古风');
+legacyOnly.resources['world:editor'].groups.splice(0,1);
+assert.equal(migrateLegacyWorldFolders(legacyOnly),false);
+assert.equal(legacyOnly.resources['world:editor'].groups.length,0);
+
+// Deleted/renamed manually-created folders cannot return through 【】
+// inference or through the intelligent grouping planner.
+const autoNames=[
+  {value:'p1',label:'【小冰块】日常'},
+  {value:'p2',label:'【小冰块】小说'},
+];
+const suppressed=createEmptyState();
+const presetRecord=ensureResource(suppressed,'preset:openai');
+presetRecord.groups=[{id:'x',name:'小冰块'}];
+presetRecord.assignments={p1:'x',p2:'x'};
+presetRecord.groups=[];presetRecord.assignments={};
+suppressAutoGroup(presetRecord,'小冰块');
+assert.equal(groupOptions(autoNames,presetRecord,true).find(g=>g.name==='小冰块'),undefined);
+assert.equal(planSmartGroups(autoNames,presetRecord,{allowSingletons:true}).groups.length,0);
+assert.equal(managerGroups(autoNames,presetRecord,true).at(-1).items.length,2);
+const persisted=normalizeState(JSON.parse(JSON.stringify(suppressed)));
+assert.equal(groupOptions(autoNames,persisted.resources['preset:openai'],true).find(g=>g.name==='小冰块'),undefined);
+assert.equal(applySmartGroups(persisted.resources['preset:openai'],{
+  groups:[{name:'小冰块',values:['p1','p2']}]
+}),0);
+unsuppressAutoGroup(persisted.resources['preset:openai'],'小冰块');
+assert.equal(groupOptions(autoNames,persisted.resources['preset:openai'],true).find(g=>g.name==='小冰块').items.length,2);
+// On rename, suppress the old name while allowing a new manual group.
+suppressAutoGroup(persisted.resources['preset:openai'],'小冰块');
+persisted.resources['preset:openai'].groups.push({id:'new',name:'正式资料'});
+assert.equal(groupOptions(autoNames,persisted.resources['preset:openai'],true).find(g=>g.name==='小冰块'),undefined);
+assert.equal(managerGroups(autoNames,persisted.resources['preset:openai'],true).find(g=>g.name==='正式资料').items.length,0);
+// Accurate smart preview remaining count with stable filename keys.
+const unclassifiedWorlds=optionsForSelect(fakeWorldSelect(['【新】北城','【新】南城']));
+const worldPreview=planSmartGroups(unclassifiedWorlds,{groups:[],assignments:{},suppressedAutoGroups:[]});
+assert.equal(worldPreview.total,2);
+assert.equal(worldPreview.remaining,0);
+console.log('DW2 Resource Library: explicit deletion/rename survives TT restarts and cannot be revived by legacy/global/auto grouping');

@@ -129,6 +129,14 @@ export function planSmartGroups(options,resource){
     if(!byName.has(name))byName.set(name,[]);
     byName.get(name).push(option.value);
   }
+  // Match a plain base name only when another resource gives explicit evidence
+  // of the same named series, e.g. 🌸方亦楷 + 方亦楷【重制】.
+  for(const option of options){
+    if(Object.hasOwn(assigned,option.value) || suggestedSeries(option.label))continue;
+    const base=String(option.label||'').trim()
+      .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]\s*)+/gu,'').trim();
+    if(byName.has(base) && !byName.get(base).includes(option.value))byName.get(base).push(option.value);
+  }
   const manualNames=new Set((resource?.groups||[]).map(g=>g.name));
   const groups=[...byName].filter(([name,values])=>values.length>=2 || (manualNames.has(name)&&values.length>=1))
     .map(([name,values])=>({name,values}));

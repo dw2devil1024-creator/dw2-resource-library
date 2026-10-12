@@ -614,7 +614,7 @@ async function checkAndUpdate(button){
   }catch(error){
     notify('检查更新失败：'+(error?.message||error)+'。可以在管理扩展里更新。','warning');
   }finally{
-    button.disabled=false;button.textContent='检查更新';
+    button.disabled=false;button.textContent='检查并更新';
   }
 }
 function refreshTavern(){
@@ -639,7 +639,7 @@ function mountSettings(){
   autoCheck.addEventListener('change',()=>{state.autoGroup=autoCheck.checked;saveData();if(popover){const adapter=sourceMap.get(popover.dataset.source);if(adapter)drawPopover(adapters.get(adapter))}});
   autoRow.append(autoCheck,el('span','','自动识别【名称】分组'));body.append(autoRow);
   const actions=el('div','settings-actions');
-  const updateButton=button('检查更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
+  const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
     button('打开资源整理','soft-btn',()=>openManager()),
     button('重新识别','soft-btn',()=>{scan();mountMenu();notify('已经重新识别当前页面的选择框','success')}),

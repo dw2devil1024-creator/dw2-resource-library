@@ -371,9 +371,6 @@ select.dw2rl-native-hidden {
 #extensionsMenu #dw2rl-menu-entry{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:32px}
 #extensionsMenu #dw2rl-menu-entry>i{width:24px;text-align:center;flex:none}
 @media (max-width:390px){
-  #dw2rl-manager .dw2rl-manager-head{padding:16px 15px 12px}
-  #dw2rl-manager .dw2rl-manager-content{padding:0 13px 13px}
-  #dw2rl-manager .dw2rl-category-tabs{margin-inline:13px}
   #dw2rl-manager .dw2rl-manager-panel{max-height:calc(100dvh - 25px)}
 }
 @media (prefers-reduced-motion:reduce){#dw2rl-popover .dw2rl-group-chevron{transition:none!important}}
@@ -394,9 +391,9 @@ select.dw2rl-native-hidden {
   padding:2px 5px;border:1px solid var(--dw2rl-theme-line);border-radius:5px;
 }
 #dw2rl-manager .dw2rl-world-bound{
-  display:flex;flex-direction:column;gap:3px;margin:0 0 12px;padding:9px 11px;
-  border:1px solid var(--dw2rl-rule);border-radius:8px;
-  background:var(--dw2rl-fog);color:var(--dw2rl-paper);
+  display:flex;flex-direction:column;gap:4px;margin:0 0 13px;padding:11px 12px;
+  border:1px solid var(--dw2rl-rule);border-radius:6px;
+  background:var(--dw2rl-card);color:var(--dw2rl-paper);
 }
 #dw2rl-manager .dw2rl-world-bound-label{font-size:9px;opacity:.76}
 #dw2rl-manager .dw2rl-world-bound-name{font-size:12px;font-weight:600;overflow-wrap:anywhere}

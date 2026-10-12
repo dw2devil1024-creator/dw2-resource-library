@@ -288,4 +288,65 @@ with sync_playwright() as p:
     assert not touch_errors,touch_errors
     touch_context.close()
     print('PASS | Chromium 390×844: TT native global-world selector retained, DW2 folders, iOS touch and restoration')
+    # Reload regression: a deleted editor folder must NOT be revived from
+    # the retired global-world category saved by older TT plugin versions.
+    regression=browser.new_page(viewport={'width':390,'height':844})
+    regression.set_content(html)
+    regression.add_script_tag(content=core+'\n'+app)
+    regression.locator('#enable').click()
+    regression.wait_for_timeout(220)
+    regression.evaluate("""() => {
+      const saved=window.stCtx.extensionSettings.dw2ResourceLibrary;
+      saved.resources['world:global']={
+        groups:[{id:'ghost',name:'大周世界'}],
+        assignments:{'worldbook:大周世界':'ghost'},
+      };
+      saved.legacyWorldMergeDone=false; // existing pre-patch user data
+      window.DW2ResourceLibrary.open('world:editor');
+    }""")
+    regression.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='新建分类').click()
+    regression.locator('.dw2rl-confirm-dialog .dw2rl-name-input').fill('大周世界')
+    regression.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    regression.locator('.dw2rl-manager-folder[data-group="loose"] .dw2rl-manager-item').filter(
+      has_text='大周世界').locator('.dw2rl-assign').select_option(label='大周世界')
+    group=regression.locator('.dw2rl-manager-folder[data-group^="manual:"]').filter(has_text='大周世界')
+    group.locator('.dw2rl-text-btn').filter(has_text='删除分类').click()
+    regression.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    assert '大周世界' not in regression.locator('.dw2rl-manager-folder-name').all_text_contents()
+    assert regression.evaluate(
+      "window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].suppressedAutoGroups.includes('大周世界')")
+    regression.evaluate("""async () => {onDisable();await onEnable();}""")
+    regression.wait_for_function("() => !!window.DW2ResourceLibrary")
+    regression.evaluate("window.DW2ResourceLibrary.open('world:editor')")
+    assert '大周世界' not in regression.locator('.dw2rl-manager-folder-name').all_text_contents()
+    assert regression.evaluate(
+      "window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:global'].groups[0].name==='大周世界'")
+    assert regression.evaluate(
+      "window.stCtx.extensionSettings.dw2ResourceLibrary.legacyWorldMergeDone===true")
+    regression.locator('#dw2rl-manager .dw2rl-manager-close').click()
+    regression.close()
+
+    # A deleted manual folder cannot turn into an automatic 【name】 group.
+    inferred=browser.new_page(viewport={'width':390,'height':844})
+    inferred.set_content(html)
+    inferred.add_script_tag(content=core+'\n'+app)
+    inferred.locator('#enable').click()
+    inferred.wait_for_timeout(220)
+    inferred.evaluate("window.DW2ResourceLibrary.open()")
+    inferred.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='新建分类').click()
+    inferred.locator('.dw2rl-confirm-dialog .dw2rl-name-input').fill('小冰块')
+    inferred.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    inferred.locator('.dw2rl-manager-folder[data-group^="manual:"]').filter(
+      has_text='小冰块').locator('.dw2rl-text-btn').filter(has_text='删除分类').click()
+    inferred.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    assert '小冰块' not in inferred.locator('.dw2rl-manager-folder-name').all_text_contents()
+    inferred.evaluate("""async () => {onDisable();await onEnable();}""")
+    inferred.wait_for_function("() => !!window.DW2ResourceLibrary")
+    inferred.evaluate("window.DW2ResourceLibrary.open()")
+    assert '小冰块' not in inferred.locator('.dw2rl-manager-folder-name').all_text_contents()
+    inferred.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
+    assert '小冰块' not in inferred.locator('.dw2rl-dialog-message').inner_text()
+    inferred.locator('.dw2rl-dialog-actions .dw2rl-soft-btn').click()
+    inferred.close()
+    print('PASS | Restart regression: deleted world and inferred preset folders stay deleted')
     browser.close()

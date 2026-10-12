@@ -186,6 +186,41 @@ with sync_playwright() as p:
     assert page.locator('#dw2rl-global-groups').count()==0
     assert page.locator('#world_info').evaluate('(n)=>!n.classList.contains("dw2rl-native-hidden")')
     assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].groups.length")==2
+    # World-book assignments must remain attached to filenames, not TT's
+    # mutable select indices. Simulate deleting/renumbering two world files.
+    saved_world=page.evaluate(
+      "window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].assignments"
+    )
+    assert saved_world and all(name.startswith('worldbook:') for name in saved_world),saved_world
+    page.evaluate("""() => {
+      const select=document.querySelector('#world_editor_select');
+      select.replaceChildren(new Option('京市','0'),new Option('大周世界','1'));
+      select.dispatchEvent(new Event('change',{bubbles:true}));
+    }""")
+    page.wait_for_timeout(180)
+    page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='预设').click()
+    page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='世界书').click()
+    assert page.locator('#dw2rl-manager .dw2rl-manager-folder-name').all_text_contents()==[
+      '大周世界','京市','未分类'
+    ]
+    for folder_name in ('京市','大周世界'):
+      folder=page.locator('#dw2rl-manager .dw2rl-manager-folder').filter(has_text=folder_name)
+      folder.locator('.dw2rl-manager-folder-toggle').click()
+      assert folder.locator('.dw2rl-manager-item').count()==1
+    # Remove one book: remaining folder keeps its member despite index 1 -> 0.
+    page.evaluate("""() => {
+      const select=document.querySelector('#world_editor_select');
+      select.replaceChildren(new Option('大周世界','0'));
+      select.dispatchEvent(new Event('change',{bubbles:true}));
+    }""")
+    page.wait_for_timeout(180)
+    page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='预设').click()
+    page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='世界书').click()
+    remaining=page.locator('#dw2rl-manager .dw2rl-manager-folder').filter(has_text='大周世界')
+    remaining.locator('.dw2rl-manager-folder-toggle').click()
+    assert remaining.locator('.dw2rl-manager-item').count()==1
+    assert remaining.locator('.dw2rl-manager-item .dw2rl-item-label').inner_text()=='大周世界'
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].assignments['worldbook:大周世界']")
     # Themes/presets offer safe, confirm-only singleton grouping choices.
     page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='美化').click()
     page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()

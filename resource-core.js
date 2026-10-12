@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.0-beta.1';
+export const VERSION = '0.1.1-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -100,3 +100,53 @@ export function optionsForSelect(select){
   }));
 }
 export function safeFilename(value){return String(value||'').replace(/[^\w\-\u4e00-\u9fa5]/g,'_').slice(0,80)}
+
+/**
+ * Conservative, independent smart grouping planner. Only exact bracket prefixes,
+ * an explicit series separator, or a trailing version marker are considered.
+ * Never changes actual TT/ST resources and never overwrites a manual assignment.
+ */
+export function suggestedSeries(label){
+  const raw=String(label||'').trim();
+  const bracket=guessGroup(raw);
+  if(bracket)return bracket;
+  // Only trim leading decorative emoji, not Chinese or Latin letters.
+  const text=raw.replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]\s*)+/gu,'').trim();
+  const pipe=text.match(/^(.{2,24}?)\s*[｜|]\s*[^｜|]+$/u);
+  if(pipe)return pipe[1].trim();
+  const version=text.match(/^(.{2,24}?)\s*(?:[【\[（(](?:重制|重置|新版|旧版|正式版?|内测版?|测试版?|v?\d+(?:[._-]\d+)*)[】\]）)]|[vV]\s*\d+(?:[._-]\d+)*)(?:\s*)$/iu);
+  if(version)return version[1].trim();
+  return '';
+}
+export function planSmartGroups(options,resource){
+  const assigned=resource?.assignments||{};
+  const byName=new Map();
+  for(const option of options){
+    // Exact option values provide a stable identity within one native selector.
+    if(Object.hasOwn(assigned,option.value))continue;
+    const name=suggestedSeries(option.label);
+    if(!name)continue;
+    if(!byName.has(name))byName.set(name,[]);
+    byName.get(name).push(option.value);
+  }
+  const manualNames=new Set((resource?.groups||[]).map(g=>g.name));
+  const groups=[...byName].filter(([name,values])=>values.length>=2 || (manualNames.has(name)&&values.length>=1))
+    .map(([name,values])=>({name,values}));
+  return {groups,total:groups.reduce((count,g)=>count+g.values.length,0)};
+}
+export function applySmartGroups(resource,plan){
+  let added=0;
+  const manual=new Map(resource.groups.map(g=>[g.name,g.id]));
+  for(const group of plan.groups){
+    let id=manual.get(group.name);
+    if(!id){
+      id='sg'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      resource.groups.push({id,name:group.name});manual.set(group.name,id);
+    }
+    for(const value of group.values){
+      if(Object.hasOwn(resource.assignments,value))continue;
+      resource.assignments[value]=id;added++;
+    }
+  }
+  return added;
+}

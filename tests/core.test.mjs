@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,optionsForSelect,ensureResource} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -28,3 +28,20 @@ const merged=groupOptions([{value:'a',label:'【小冰块】A'},{value:'b',label
 assert.equal(merged.length,1);
 assert.equal(merged[0].items.length,2);
 console.log('DW2 Resource Library: matching manual and auto folders merge correctly');
+
+const smart={groups:[{id:'manual',name:'织界'}],assignments:{protected:'manual'}};
+const smartOptions=[
+ {value:'protected',label:'织界V1'}, {value:'v2',label:'织界V2'},
+ {value:'v3',label:'织界V3'}, {value:'ice1',label:'【小冰块】小说'},
+ {value:'ice2',label:'【小冰块】沉浸'}, {value:'single',label:'独立无标签资源'}
+];
+const planned=planSmartGroups(smartOptions,smart);
+assert.equal(planned.total,4);
+assert.deepEqual(planned.groups.map(g=>g.name),['织界','小冰块']);
+assert.equal(applySmartGroups(smart,planned),4);
+assert.equal(smart.assignments.protected,'manual');
+assert.equal(smart.assignments.v2,'manual');
+assert.equal(smart.assignments.ice1,smart.assignments.ice2);
+assert.equal(smart.groups.length,2);
+assert.equal(planSmartGroups(smartOptions,smart).total,0);
+console.log('DW2 Resource Library: smart preview, non-destructive merge, repeat idempotency passed');

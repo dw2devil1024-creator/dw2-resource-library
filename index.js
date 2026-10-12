@@ -416,7 +416,7 @@ function renderManager(){
     managerExpanded.clear();managerExpanded.add('loose');
   }
   search.addEventListener('input',()=>{managerQuery=search.value;drawManagerGroups(groups,adapter,record,options)});
-  content.append(groups,search);
+  content.append(search,groups);
   drawManagerGroups(groups,adapter,record,options);
   content.append(el('p','manager-note','分类信息独立保存，不修改或删除原始预设、世界书和美化文件。'));
   modal.append(content);manager.append(modal);

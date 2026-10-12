@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.3-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.4-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -19,6 +19,7 @@ let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
+let globalGroupOpen='',globalSearchInput=null,globalSearchHandler=null,globalResults=null;
 const managerExpanded=new Set();
 let managerInitializedSource='';
 const listeners=[];
@@ -54,6 +55,30 @@ function loadData(){
     try{state=normalizeState(JSON.parse(localStorage.getItem(STORE_KEY)||'null'))}catch{state=createEmptyState()}
   }
 }
+// Both TT world-book selectors list the same files. Merge older independent
+// global folder labels into editor folders, while keeping the old record.
+function mergeWorldBookFolders(){
+  const source=state.resources['world:global'];
+  if(!source || (!source.groups?.length && !Object.keys(source.assignments||{}).length))return;
+  const target=ensureResource(state,'world:editor');
+  const mapping=new Map();let changed=false;
+  for(const folder of source.groups||[]){
+    let dest=target.groups.find(g=>g.name===folder.name);
+    if(!dest){
+      let id=folder.id;
+      if(target.groups.some(g=>g.id===id))id='wg'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      dest={id,name:folder.name};target.groups.push(dest);changed=true;
+    }
+    mapping.set(folder.id,dest.id);
+  }
+  for(const [value,groupId] of Object.entries(source.assignments||{})){
+    const mapped=mapping.get(groupId);
+    if(mapped && !Object.hasOwn(target.assignments,value)){target.assignments[value]=mapped;changed=true}
+  }
+  if(changed)saveData();
+}
+const folderSourceId=adapter=>adapter?.source?.category==='world'?'world:editor':adapter.source.id;
+const folderRecord=adapter=>ensureResource(state,folderSourceId(adapter));
 function saveData(){
   if(!fallbackStore){
     const current=nativeContext();
@@ -79,6 +104,11 @@ function refreshTrigger(adapter){
 }
 function cleanupAdapter(adapter){
   adapter.observer?.disconnect();
+  if(adapter.globalNative){
+    adapter.select.removeEventListener('change',adapter.update);
+    adapter.jq?.off('select2:open.dw2rl select2:close.dw2rl');
+    cleanGlobalFolders();return;
+  }
   adapter.select.removeEventListener('change',adapter.update);
   adapter.select.classList.remove('dw2rl-native-hidden');
   adapter.companions.forEach(x=>x.classList.remove('dw2rl-native-hidden'));
@@ -94,11 +124,111 @@ function findCompanion(select){
   }
   return found;
 }
+
+// TT's global worldbook selector is already Select2 on mobile. Decorate that
+// existing dropdown; never insert an extra trigger below it.
+function connectGlobalWorld(select,source){
+  const adapter={select,source,trigger:null,globalNative:true,observer:null,update:null,jq:null};
+  const $=globalThis.jQuery||globalThis.$;
+  if(typeof $==='function'){
+    const jq=$(select);adapter.jq=jq;
+    jq.on('select2:open.dw2rl',()=>{
+      requestAnimationFrame(()=>{
+        if(alive&&state.enabled&&adapters.get(select)===adapter)renderGlobalFolders(adapter);
+      });
+    });
+    jq.on('select2:close.dw2rl',cleanGlobalFolders);
+  }
+  adapter.update=()=>{
+    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
+  };
+  select.addEventListener('change',adapter.update);
+  adapter.observer=new MutationObserver(()=>{
+    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
+  });
+  adapter.observer.observe(select,{childList:true,subtree:true,
+    attributes:true,attributeFilter:['selected','disabled','value']});
+  adapters.set(select,adapter);sourceMap.set(source.id,select);
+}
+function cleanGlobalFolders(){
+  if(globalSearchInput&&globalSearchHandler)
+    globalSearchInput.removeEventListener('input',globalSearchHandler);
+  globalSearchInput=null;globalSearchHandler=null;
+  if(globalResults){globalResults.style.removeProperty('display');globalResults=null}
+  document.getElementById('dw2rl-global-groups')?.remove();
+  globalGroupOpen='';
+}
+function renderGlobalFolders(adapter){
+  if(!adapter?.globalNative||!alive||!state.enabled)return;
+  const results=document.getElementById('select2-world_info-results');
+  const dropdown=results?.closest('.select2-container--open .select2-dropdown');
+  if(!results||!dropdown)return;
+  const search=dropdown.querySelector('.select2-search__field');
+  if(search!==globalSearchInput){
+    if(globalSearchInput&&globalSearchHandler)
+      globalSearchInput.removeEventListener('input',globalSearchHandler);
+    globalSearchInput=search;globalSearchHandler=()=>renderGlobalFolders(adapter);
+    search?.addEventListener('input',globalSearchHandler);
+  }
+  if(globalResults&&globalResults!==results)globalResults.style.removeProperty('display');
+  globalResults=results;results.style.display='none';
+  let panel=document.getElementById('dw2rl-global-groups');
+  if(!panel||panel.parentElement!==results.parentElement){
+    panel?.remove();panel=el('div','global-groups');panel.id='dw2rl-global-groups';
+    results.insertAdjacentElement('afterend',panel);
+  }
+  const previousScroll=panel.scrollTop;
+  panel.replaceChildren();
+  if(!panel.dataset.eventsBound){
+    for(const type of ['mousedown','mouseup','pointerdown','pointerup','touchstart','touchend','click'])
+      panel.addEventListener(type,event=>event.stopPropagation(),{passive:true});
+    panel.dataset.eventsBound='true';
+  }
+  const options=sourceOptions(adapter);
+  const groups=groupOptions(options,folderRecord(adapter),state.autoGroup);
+  const q=(search?.value||'').trim().toLocaleLowerCase();let shown=0;
+  for(const group of groups){
+    const matchedName=group.name.toLocaleLowerCase().includes(q);
+    const items=q&&!matchedName
+      ?group.items.filter(x=>x.label.toLocaleLowerCase().includes(q)):group.items;
+    if(!items.length)continue;
+    shown+=items.length;
+    const section=el('section','global-group');
+    const head=button('','global-group-head');
+    const expanded=!!q||(globalGroupOpen?globalGroupOpen===group.key:group.items.some(x=>x.selected));
+    head.setAttribute('aria-expanded',String(expanded));
+    const arrow=icon('down');arrow.classList.add('dw2rl-global-chevron');
+    head.append(arrow,el('span','global-group-name',group.name),
+      el('small','global-count',String(items.length)));
+    head.addEventListener('click',()=>{
+      globalGroupOpen=expanded?'__none__':group.key;renderGlobalFolders(adapter);
+    });
+    section.append(head);
+    if(expanded){
+      const body=el('div','global-items');
+      for(const item of items){
+        const entry=button('','global-entry'+(item.selected?' is-picked':''),()=>{
+          performSelect(adapter,item.value);
+          if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
+        });
+        entry.append(el('span','global-entry-label',item.label));
+        if(item.selected)entry.append(el('span','global-tick','✓'));
+        body.append(entry);
+      }
+      section.append(body);
+    }
+    panel.append(section);
+  }
+  if(!shown)panel.append(el('div','global-empty','没有找到匹配的世界书'));
+  panel.scrollTop=previousScroll;
+}
+
 function connect(select,source){
   const known=adapters.get(select);
   if(known){refreshTrigger(known);return}
   const selected=sourceMap.get(source.id);
   if(selected && selected!==select){const previous=adapters.get(selected);if(previous){cleanupAdapter(previous);adapters.delete(selected)}}
+  if(source.id==='world:global'){connectGlobalWorld(select,source);return}
   const trigger=button('','native-trigger',()=>openPopover(select));
   const title=el('span','native-value','');
   const arrow=icon('down');arrow.classList.add('dw2rl-chevron');
@@ -172,7 +302,7 @@ function linkedWorldNotice(adapter){
   if(!name)return null;
   const notice=el('div','world-bound');
   notice.append(el('span','world-bound-label','角色卡关联世界书'),el('strong','world-bound-name',name),
-    el('small','world-bound-note','来自当前角色卡 · 不代表全局启用'));
+    el('small','world-bound-note','来自当前角色卡'));
   return notice;
 }
 
@@ -247,7 +377,7 @@ function drawPopover(adapter){
   const focusHad=content.contains(document.activeElement) && document.activeElement?.matches('input[type="search"]');
   search.addEventListener('input',()=>{query=search.value;const pos=search.selectionStart;drawPopover(adapter);const next=popover?.querySelector('.dw2rl-search');if(next){next.focus();try{next.setSelectionRange(pos,pos)}catch{}}});
   content.append(search);
-  const options=sourceOptions(adapter),resource=ensureResource(state,adapter.source.id);
+  const options=sourceOptions(adapter),resource=folderRecord(adapter);
   const linkedWorld=linkedWorldFor(adapter);
   const groups=groupOptions(options,resource,state.autoGroup);
   const list=el('div','groups');
@@ -307,12 +437,23 @@ function overlayPrompt(title,initial,onSave,opts={}){
   const input=el('input','name-input');input.value=initial||'';input.maxLength=36;input.placeholder='输入文件夹名称';
   const note=el('p','error-text','');
   if(!opts.confirmOnly){popup.append(input,note)}else popup.append(el('p','dialog-message',opts.message||''));
+  let choice=null;
+  if(opts.confirmOnly&&opts.optionLabel){
+    const label=el('label','dialog-choice');choice=el('input');choice.type='checkbox';
+    choice.checked=opts.optionDefault===true;
+    label.append(choice,el('span','',opts.optionLabel));popup.append(label);
+    choice.addEventListener('change',()=>{
+      const next=opts.onToggle?.(choice.checked);
+      const msg=popup.querySelector('.dw2rl-dialog-message');
+      if(msg&&typeof next==='string')msg.textContent=next;
+    });
+  }
   const actions=el('div','dialog-actions');
   actions.append(button('取消','soft-btn',()=>backdrop.remove()));
   const ok=button(opts.confirmOnly?'确认':'保存',opts.danger?'danger-btn':'primary-btn',()=>{
     const name=input.value.trim();
     if(!opts.confirmOnly && (!name || name.length>36)){note.textContent='请输入 1 至 36 字的名称';return}
-    const result=onSave(opts.confirmOnly?'':name);
+    const result=onSave(opts.confirmOnly?'':name,choice?.checked);
     if(result===false){note.textContent='名称重复或无法保存';return}
     backdrop.remove();renderManager();
   });
@@ -321,7 +462,7 @@ function overlayPrompt(title,initial,onSave,opts={}){
 }
 function makeGroup(adapter){
   overlayPrompt('新建分类','',name=>{
-    const record=ensureResource(state,adapter.source.id);
+    const record=folderRecord(adapter);
     if(record.groups.some(g=>g.name===name))return false;
     record.groups.push({id:'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),name});
     saveData();return true;
@@ -329,7 +470,7 @@ function makeGroup(adapter){
 }
 function renameGroup(adapter,group){
   overlayPrompt('重命名分类',group.name,name=>{
-    const record=ensureResource(state,adapter.source.id);
+    const record=folderRecord(adapter);
     if(record.groups.some(g=>g.id!==group.id&&g.name===name))return false;
     const target=record.groups.find(g=>g.id===group.id);if(!target)return false;
     target.name=name;saveData();return true;
@@ -337,36 +478,42 @@ function renameGroup(adapter,group){
 }
 function removeGroup(adapter,group){
   overlayPrompt('删除这个分类？','',()=>{
-    const record=ensureResource(state,adapter.source.id);
+    const record=folderRecord(adapter);
     record.groups=record.groups.filter(g=>g.id!==group.id);
     for(const [value,id] of Object.entries(record.assignments))if(id===group.id)delete record.assignments[value];
     saveData();return true;
   },{confirmOnly:true,danger:true,message:'只删除文件夹分类，里面的预设、世界书或美化不会被删除。'});
 }
 function assign(adapter,item,groupId){
-  const record=ensureResource(state,adapter.source.id);
+  const record=folderRecord(adapter);
   if(groupId && record.groups.some(g=>g.id===groupId))record.assignments[item.value]=groupId;
   else delete record.assignments[item.value];
   saveData();
   if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
 }
 function smartOrganize(adapter){
-  const record=ensureResource(state,adapter.source.id);
-  const proposal=planSmartGroups(sourceOptions(adapter),record,{allowSingletons:adapter.source.category==='world'});
-  if(!proposal.groups.length){
-    notify('暂时没有足够明确的同系列资源。你可以在「未分类」中手动整理。','info');return;
-  }
-  const summary=proposal.groups.slice(0,8).map(g=>g.name+'（'+g.values.length+'）').join('、')+(proposal.groups.length>8?'等':'');
-  overlayPrompt('智能整理预览','',()=>{
-    const latest=ensureResource(state,adapter.source.id);
-    const safePlan=planSmartGroups(sourceOptions(adapter),latest,{allowSingletons:adapter.source.category==='world'});
-    if(!safePlan.groups.length)return false;
-    applySmartGroups(latest,safePlan);
+  const record=folderRecord(adapter);
+  const options=sourceOptions(adapter);
+  const propose=withSingles=>planSmartGroups(options,record,{allowSingletons:withSingles});
+  const explain=withSingles=>{
+    const plan=propose(withSingles);
+    const sample=plan.groups.slice(0,7).map(g=>g.name+'（'+g.values.length+'）').join('、');
+    return '预计整理 '+plan.total+' 项，共 '+plan.groups.length+' 个分类（单项文件夹 '+plan.singletons+' 个）。'
+      +(sample?'例如：'+sample+(plan.groups.length>7?'等。':'。'):'')
+      +'还有 '+plan.remaining+' 项不处理。已手动分类的保持不变，不修改预设、世界书或美化文件。';
+  };
+  overlayPrompt('智能整理预览','',(_,withSingles)=>{
+    const latest=folderRecord(adapter);
+    const plan=planSmartGroups(sourceOptions(adapter),latest,{allowSingletons:withSingles});
+    if(!plan.groups.length){notify('目前没有可以新增的分类','info');return true}
+    applySmartGroups(latest,plan);
     saveData();
     if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
-    notify('已整理 '+safePlan.total+' 项分类记录；原始资源未修改。','success');
+    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
+    notify('已整理 '+plan.total+' 项分类记录；原始资源未修改。','success');
     return true;
-  },{confirmOnly:true,message:'预计生成或合并 '+proposal.groups.length+' 个分类，共 '+proposal.total+' 项：'+summary+'。'+(adapter.source.category==='world'?'本次允许单本世界书独立成组（'+proposal.singletons+' 个单本分类）。':'')+'另有 '+proposal.remaining+' 项暂不处理。已手动归类的资源保持原样；不修改原始文件。'});
+  },{confirmOnly:true,optionLabel:'剩余单项也各建一个文件夹',optionDefault:true,
+    message:explain(true),onToggle:checked=>explain(checked)});
 }
 function exportGroups(){
   const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,version:VERSION,exportedAt:new Date().toISOString()};
@@ -423,7 +570,7 @@ function renderManager(){
   const controls=el('div','manager-actions');
   controls.append(button('＋ 新建分类','primary-btn',()=>makeGroup(adapter)),button('智能整理','soft-btn',()=>smartOrganize(adapter)),button('导出备份','soft-btn',exportGroups));
   content.append(controls);
-  const record=ensureResource(state,adapter.source.id);
+  const record=folderRecord(adapter);
   const options=sourceOptions(adapter);
   const search=el('input','manager-search');search.type='search';
   search.placeholder='搜索资源或文件夹…';search.value=managerQuery;search.autocomplete='off';
@@ -575,7 +722,7 @@ function onDOMChange(records){
 }
 function start(){
   if(alive)return;
-  alive=true;loadData();
+  alive=true;loadData();mergeWorldBookFolders();
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));
@@ -607,7 +754,7 @@ export function onDisable(){
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
-  deactivateSelectors();closeManager();
+  deactivateSelectors();cleanGlobalFolders();closeManager();
   document.getElementById(MENU_ID)?.remove();
   document.getElementById(SETTINGS_ID)?.remove();settingsRoot=null;settingsReady=false;
   if(globalThis.DW2ResourceLibrary?.version===VERSION)delete globalThis.DW2ResourceLibrary;

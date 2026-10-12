@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.4-beta.2 | S.A. · DW2
+ * DW2 · Resource Library v0.1.5-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -8,7 +8,7 @@ import {
   ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 
-const SELECTORS='select[data-preset-manager-for], select#themes, select#world_info, select#world_editor_select';
+const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
 const SETTINGS_ID='dw2rl-settings';
 const POP_ID='dw2rl-popover';
@@ -19,7 +19,6 @@ let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
-let globalGroupOpen='',globalSearchInput=null,globalSearchHandler=null,globalResults=null;
 const managerExpanded=new Set();
 let managerInitializedSource='';
 const listeners=[];
@@ -104,11 +103,6 @@ function refreshTrigger(adapter){
 }
 function cleanupAdapter(adapter){
   adapter.observer?.disconnect();
-  if(adapter.globalNative){
-    adapter.select.removeEventListener('change',adapter.update);
-    adapter.jq?.off('select2:open.dw2rl select2:close.dw2rl');
-    cleanGlobalFolders();return;
-  }
   adapter.select.removeEventListener('change',adapter.update);
   adapter.select.classList.remove('dw2rl-native-hidden');
   adapter.companions.forEach(x=>x.classList.remove('dw2rl-native-hidden'));
@@ -125,121 +119,11 @@ function findCompanion(select){
   return found;
 }
 
-// TT's global worldbook selector is already Select2 on mobile. Decorate that
-// existing dropdown; never insert an extra trigger below it.
-function connectGlobalWorld(select,source){
-  const adapter={select,source,trigger:null,globalNative:true,observer:null,update:null,jq:null};
-  const $=globalThis.jQuery||globalThis.$;
-  if(typeof $==='function'){
-    const jq=$(select);adapter.jq=jq;
-    jq.on('select2:open.dw2rl',()=>{
-      requestAnimationFrame(()=>{
-        if(alive&&state.enabled&&adapters.get(select)===adapter)renderGlobalFolders(adapter);
-      });
-    });
-    jq.on('select2:close.dw2rl',cleanGlobalFolders);
-  }
-  adapter.update=()=>{
-    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
-  };
-  select.addEventListener('change',adapter.update);
-  adapter.observer=new MutationObserver(()=>{
-    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
-  });
-  adapter.observer.observe(select,{childList:true,subtree:true,
-    attributes:true,attributeFilter:['selected','disabled','value']});
-  adapters.set(select,adapter);sourceMap.set(source.id,select);
-}
-function cleanGlobalFolders(){
-  if(globalSearchInput&&globalSearchHandler)
-    globalSearchInput.removeEventListener('input',globalSearchHandler);
-  globalSearchInput=null;globalSearchHandler=null;
-  if(globalResults){globalResults.style.removeProperty('display');globalResults=null}
-  document.getElementById('dw2rl-global-groups')?.remove();
-  globalGroupOpen='';
-}
-function renderGlobalFolders(adapter){
-  if(!adapter?.globalNative||!alive||!state.enabled)return;
-  const results=document.getElementById('select2-world_info-results');
-  const dropdown=results?.closest('.select2-container--open .select2-dropdown');
-  if(!results||!dropdown)return;
-  const search=dropdown.querySelector('.select2-search__field');
-  if(search!==globalSearchInput){
-    if(globalSearchInput&&globalSearchHandler)
-      globalSearchInput.removeEventListener('input',globalSearchHandler);
-    globalSearchInput=search;globalSearchHandler=()=>renderGlobalFolders(adapter);
-    search?.addEventListener('input',globalSearchHandler);
-  }
-  if(globalResults&&globalResults!==results)globalResults.style.removeProperty('display');
-  globalResults=results;results.style.display='none';
-  let panel=document.getElementById('dw2rl-global-groups');
-  if(!panel||panel.parentElement!==results.parentElement){
-    panel?.remove();panel=el('div','global-groups');panel.id='dw2rl-global-groups';
-    results.insertAdjacentElement('afterend',panel);
-  }
-  const previousScroll=panel.scrollTop;
-  panel.replaceChildren();
-  if(!panel.dataset.eventsBound){
-    for(const type of ['mousedown','mouseup','pointerdown','pointerup','touchstart','touchend','click'])
-      panel.addEventListener(type,event=>event.stopPropagation(),{passive:true});
-    panel.dataset.eventsBound='true';
-  }
-  const options=sourceOptions(adapter);
-  const groups=groupOptions(options,folderRecord(adapter),state.autoGroup);
-  const q=(search?.value||'').trim().toLocaleLowerCase();let shown=0;
-  for(const group of groups){
-    const matchedName=group.name.toLocaleLowerCase().includes(q);
-    const items=q&&!matchedName
-      ?group.items.filter(x=>x.label.toLocaleLowerCase().includes(q)):group.items;
-    if(!items.length)continue;
-    shown+=items.length;
-    const section=el('section','global-group');
-    const head=button('','global-group-head');
-    const expanded=!!q||(globalGroupOpen?globalGroupOpen===group.key:group.items.some(x=>x.selected));
-    head.setAttribute('aria-expanded',String(expanded));
-    const arrow=icon('down');arrow.classList.add('dw2rl-global-chevron');
-    head.append(arrow,el('span','global-group-name',group.name),
-      el('small','global-count',String(items.length)));
-    head.addEventListener('click',()=>{
-      globalGroupOpen=expanded?'__none__':group.key;renderGlobalFolders(adapter);
-    });
-    section.append(head);
-    if(expanded){
-      const body=el('div','global-items');
-      for(const item of items){
-        const entry=button('','global-entry'+(item.selected?' is-picked':''),()=>{
-          performSelect(adapter,item.value);
-          if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
-        });
-        entry.append(el('span','global-entry-label',item.label));
-        if(item.selected)entry.append(el('span','global-tick','✓'));
-        body.append(entry);
-      }
-      section.append(body);
-    }
-    panel.append(section);
-  }
-  if(!shown)panel.append(el('div','global-empty','没有找到匹配的世界书'));
-  panel.scrollTop=previousScroll;
-}
-
 function connect(select,source){
-  // On iOS / TT mobile, global worlds may be a plain native <select multiple>
-  // instead of Select2. In that case replace the selector IN PLACE with the
-  // existing grouped multi-select popover, never append a duplicate control.
-  const nativeGlobal=source.id==='world:global'
-    &&findCompanion(select).some(node=>node.matches('.select2-container'));
   const known=adapters.get(select);
-  if(known){
-    if(source.id==='world:global' && !!known.globalNative!==nativeGlobal){
-      // TT can initialize/destroy Select2 after the extension has mounted.
-      cleanupAdapter(known);adapters.delete(select);
-      if(sourceMap.get(source.id)===select)sourceMap.delete(source.id);
-    }else{refreshTrigger(known);return}
-  }
+  if(known){refreshTrigger(known);return}
   const selected=sourceMap.get(source.id);
   if(selected && selected!==select){const previous=adapters.get(selected);if(previous){cleanupAdapter(previous);adapters.delete(selected)}}
-  if(nativeGlobal){connectGlobalWorld(select,source);return}
   const trigger=button('','native-trigger',()=>openPopover(select));
   const title=el('span','native-value','');
   const arrow=icon('down');arrow.classList.add('dw2rl-chevron');
@@ -520,7 +404,6 @@ function smartOrganize(adapter){
     applySmartGroups(latest,plan);
     saveData();
     if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
-    if(document.getElementById('dw2rl-global-groups'))renderGlobalFolders(adapter);
     notify('已整理 '+plan.total+' 项分类记录；原始资源未修改。','success');
     return true;
   },{confirmOnly:true,optionLabel:'剩余单项也各建一个文件夹',optionDefault:true,
@@ -682,9 +565,66 @@ function syncSetting(){
   const control=document.getElementById('dw2rl-enabled');if(control)control.checked=state.enabled;
   const auto=document.getElementById('dw2rl-autogroup');if(auto)auto.checked=state.autoGroup;
 }
+function sortSettings(){
+  const section=document.getElementById(SETTINGS_ID);
+  if(!section)return;
+  const host=document.querySelector('#extensions_settings2,#extensions_settings,.extensions_settings');
+  if(!host)return;
+  // Only move our own drawer; leave all other extensions' layout untouched.
+  // Little Things follows Preset Console, so Resource Library follows it.
+  const anchors=['dw2-lt-settings','dw2-preset-console-settings','jd-bookshelf-settings'];
+  const anchor=anchors.map(id=>document.getElementById(id))
+    .find(node=>node?.parentElement===host);
+  if(anchor){
+    if(anchor.nextElementSibling!==section)anchor.after(section);
+  }else if(section.parentElement!==host||section!==host.lastElementChild){
+    host.append(section);
+  }
+}
+async function checkAndUpdate(button){
+  if(button.disabled)return;
+  button.disabled=true;button.textContent='检查中…';
+  try{
+    // Follow the same TT built-in extension update API used by our other DW2 extensions.
+    const [scriptMod,extensionMod]=await Promise.all([
+      import('/script.js'),import('/scripts/extensions.js'),
+    ]);
+    const types=extensionMod.extensionTypes||{};
+    const id=Object.keys(types).find(key=>
+      key==='third-party/dw2-resource-library'||
+      key==='dw2-resource-library'||
+      key.endsWith('/dw2-resource-library'));
+    if(!id)throw new Error('未识别到资源库安装目录，可在管理扩展中更新');
+    if(typeof scriptMod.getRequestHeaders!=='function')
+      throw new Error('当前 TT 没有提供更新验证信息');
+    const response=await fetch('/api/extensions/update',{
+      method:'POST',
+      headers:scriptMod.getRequestHeaders(),
+      body:JSON.stringify({
+        extensionName:id.replace(/^third-party\//,''),
+        global:types[id]==='global',
+      }),
+    });
+    if(!response.ok){
+      const reason=(await response.text()).slice(0,200);
+      throw new Error(reason||'HTTP '+response.status);
+    }
+    const result=await response.json();
+    notify(result.isUpToDate?'已经是最新版本':'资源库更新完成，请点击「刷新酒馆」使新版生效','success');
+  }catch(error){
+    notify('检查更新失败：'+(error?.message||error)+'。可以在管理扩展里更新。','warning');
+  }finally{
+    button.disabled=false;button.textContent='检查更新';
+  }
+}
+function refreshTavern(){
+  if(window.confirm('重新加载 TT 酒馆？请先保存尚未保存的预设、世界书或美化修改。'))
+    window.location.reload();
+}
 function mountSettings(){
-  const host=document.querySelector('#extensions_settings2,#extensions_settings');if(!host)return;
-  let section=document.getElementById(SETTINGS_ID);if(section){settingsRoot=section;syncSetting();return}
+  const host=document.querySelector('#extensions_settings2,#extensions_settings,.extensions_settings');if(!host)return;
+  let section=document.getElementById(SETTINGS_ID);
+  if(section){settingsRoot=section;syncSetting();sortSettings();return}
   section=el('div','settings inline-drawer');section.id=SETTINGS_ID;section.classList.add('inline-drawer');
   const header=el('div','settings-header inline-drawer-toggle inline-drawer-header');
   header.classList.add('inline-drawer-toggle','inline-drawer-header');
@@ -692,17 +632,23 @@ function mountSettings(){
   const arrow=document.createElement('i');arrow.className='inline-drawer-icon fa-solid fa-circle-chevron-down down';
   header.append(title,arrow);
   const body=el('div','settings-content inline-drawer-content');body.classList.add('inline-drawer-content');body.style.display='none';
-  body.append(el('p','version','预设 · 世界书 · 美化  |  '+VERSION));
+  body.append(el('p','version','预设 · 世界书（角色卡） · 美化  |  '+VERSION));
   const toggle=el('label','toggle-row');const check=el('input');check.type='checkbox';check.id='dw2rl-enabled';check.checked=state.enabled;
   check.addEventListener('change',()=>setEnabled(check.checked));toggle.append(check,el('span','','启用原位分组选择'));body.append(toggle);
   const autoRow=el('label','toggle-row');const autoCheck=el('input');autoCheck.type='checkbox';autoCheck.id='dw2rl-autogroup';autoCheck.checked=state.autoGroup;
   autoCheck.addEventListener('change',()=>{state.autoGroup=autoCheck.checked;saveData();if(popover){const adapter=sourceMap.get(popover.dataset.source);if(adapter)drawPopover(adapters.get(adapter))}});
   autoRow.append(autoCheck,el('span','','自动识别【名称】分组'));body.append(autoRow);
   const actions=el('div','settings-actions');
-  actions.append(button('打开资源整理','soft-btn',()=>openManager()),button('重新识别','soft-btn',()=>{scan();mountMenu();notify('已经重新识别当前页面的选择框','success')}));
-  body.append(actions,el('p','settings-tip','先关闭嘎嘎等其他下拉框分组插件，再启用本功能。关闭开关会恢复 TT 原来的选择框。'));
+  const updateButton=button('检查更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
+  actions.append(
+    button('打开资源整理','soft-btn',()=>openManager()),
+    button('重新识别','soft-btn',()=>{scan();mountMenu();notify('已经重新识别当前页面的选择框','success')}),
+    updateButton,
+    button('刷新酒馆','soft-btn',refreshTavern),
+  );
+  body.append(actions,el('p','settings-tip','全局世界书使用 TT 原生选择框；角色卡世界书、预设和美化可独立分组。关闭开关后恢复原生选择框。'));
   header.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const visible=body.style.display==='none';body.style.display=visible?'block':'none';header.setAttribute('aria-expanded',String(visible));arrow.classList.toggle('down',!visible)});
-  section.append(header,body);host.append(section);settingsRoot=section;settingsReady=true;
+  section.append(header,body);host.append(section);settingsRoot=section;settingsReady=true;sortSettings();
 }
 function documentClick(e){
   if(popover && !popover.contains(e.target) && !e.target.closest('.dw2rl-native-trigger'))closePopover();
@@ -717,28 +663,21 @@ function onViewportChange(){
   positionPopover(adapter.trigger);
 }
 function onDOMChange(records){
-  let shouldMount=false,shouldScan=false,shouldRefreshGlobal=false;
+  let shouldMount=false,shouldScan=false;
   for(const record of records){
     for(const node of record.addedNodes){
       if(node.nodeType!==1)continue;
-      // Body chat updates are ignored; only resource selectors/settings/menus trigger a scan.
+      // Ignore ordinary chat messages; watch only relevant TT settings/selectors.
       if(node.matches?.(SELECTORS) || node.querySelector?.(SELECTORS))shouldScan=true;
-      if(node.matches?.('.select2-container') || node.querySelector?.('.select2-container'))shouldScan=true;
-      if(node.matches?.('#select2-world_info-results') || node.querySelector?.('#select2-world_info-results'))shouldRefreshGlobal=true;
       if(node.matches?.('#srg-root,#srg-settings,.srg-select-shell') || node.querySelector?.('#srg-root,#srg-settings,.srg-select-shell'))shouldScan=true;
-      if(node.id==='extensionsMenu'||node.id==='extensions_settings2'||node.id==='extensions_settings'||node.querySelector?.('#extensionsMenu,#extensions_settings2,#extensions_settings'))shouldMount=true;
+      if(node.matches?.('#extensionsMenu,#extensions_settings2,#extensions_settings,#dw2-lt-settings,#dw2-preset-console-settings,#jd-bookshelf-settings')
+        ||node.querySelector?.('#extensionsMenu,#extensions_settings2,#extensions_settings,#dw2-lt-settings,#dw2-preset-console-settings,#jd-bookshelf-settings'))
+        shouldMount=true;
     }
-    for(const node of record.removedNodes){
-      if(node.nodeType===1 && (node.matches?.('.select2-container,#world_info')||node.querySelector?.('.select2-container,#world_info')))shouldScan=true;
-    }
+    if(shouldMount&&shouldScan)break;
   }
   if(shouldScan)scheduleScan();
-  // Recover when TT opens the Select2 dropdown without relaying select2:open.
-  if(shouldRefreshGlobal)requestAnimationFrame(()=>{
-    const active=adapters.get(sourceMap.get('world:global'));
-    if(active?.globalNative)renderGlobalFolders(active);
-  });
-  if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings();}});
+  if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings()}});
 }
 function start(){
   if(alive)return;
@@ -774,7 +713,7 @@ export function onDisable(){
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
-  deactivateSelectors();cleanGlobalFolders();closeManager();
+  deactivateSelectors();closeManager();
   document.getElementById(MENU_ID)?.remove();
   document.getElementById(SETTINGS_ID)?.remove();settingsRoot=null;settingsReady=false;
   if(globalThis.DW2ResourceLibrary?.version===VERSION)delete globalThis.DW2ResourceLibrary;

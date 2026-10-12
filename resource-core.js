@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.1-beta.1';
+export const VERSION = '0.1.2-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -93,9 +93,27 @@ export function groupOptions(options,resource,autoGroup=true){
   if(unassigned.length)groups.push({key:'loose',name:'未分组',items:unassigned,kind:'loose'});
   return groups;
 }
+/** A stable manager tree: user folders, inferred folders, and an always-visible Unclassified bin. */
+export function managerGroups(options,resource,autoGroup=true){
+  const grouped=groupOptions(options,resource,autoGroup);
+  const found=new Map(grouped.map(x=>[x.key,x]));
+  const manual=(resource?.groups||[]).map(g=>found.get('manual:'+g.id)||{
+    key:'manual:'+g.id,name:g.name,items:[],kind:'manual'
+  });
+  const auto=grouped.filter(g=>g.kind==='auto');
+  const loose=found.get('loose')||{key:'loose',name:'未分类',items:[],kind:'loose'};
+  // User-visible terminology remains consistent whether this bin is empty or full.
+  return [...manual,...auto,{...loose,name:'未分类'}];
+}
 export function optionsForSelect(select){
   if(!select)return[];
-  return [...select.options].filter(option=>!option.disabled && !!String(option.textContent||'').trim()).map(option=>({
+  return [...select.options].filter(option=>{
+    const label=String(option.textContent||'').trim();
+    if(option.disabled||!label)return false;
+    // TT editor placeholder is a control action, not a real world-book file.
+    if(select.id==='world_editor_select' && /^[-—]{2,}\s*选择以编辑\s*[-—]{2,}$/u.test(label))return false;
+    return true;
+  }).map(option=>({
     value:String(option.value),label:String(option.textContent||'').replace(/\s+/g,' ').trim(),selected:!!option.selected
   }));
 }
@@ -106,41 +124,58 @@ export function safeFilename(value){return String(value||'').replace(/[^\w\-\u4e
  * an explicit series separator, or a trailing version marker are considered.
  * Never changes actual TT/ST resources and never overwrites a manual assignment.
  */
+// Generic variant flags should never become folder names by themselves.
+const VARIANT_FLAG=/^(?:重制|重置|新版|旧版|测试版?|内测版?|正式版?|修订|复刻|修改版?|改版)$/iu;
+function cleanSeriesLabel(value){
+  let text=String(value||'').trim()
+    .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]\s*)+/gu,'').trim();
+  // A leading 【重制】 is a variant hint, not a series title.
+  for(let i=0;i<2;i++){
+    const flag=text.match(/^[【\[]([^】\]]{1,12})[】\]]\s*/u);
+    if(!flag||!VARIANT_FLAG.test(flag[1].trim()))break;
+    text=text.slice(flag[0].length).trim();
+  }
+  return text;
+}
 export function suggestedSeries(label){
-  const raw=String(label||'').trim();
-  const bracket=guessGroup(raw);
-  if(bracket)return bracket;
-  // Only trim leading decorative emoji, not Chinese or Latin letters.
-  const text=raw.replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]\s*)+/gu,'').trim();
+  const text=cleanSeriesLabel(label);
+  const bracket=guessGroup(text);
+  if(bracket&&!VARIANT_FLAG.test(bracket))return bracket;
   const pipe=text.match(/^(.{2,24}?)\s*[｜|]\s*[^｜|]+$/u);
-  if(pipe)return pipe[1].trim();
-  const version=text.match(/^(.{2,24}?)\s*(?:[【\[（(](?:重制|重置|新版|旧版|正式版?|内测版?|测试版?|v?\d+(?:[._-]\d+)*)[】\]）)]|[vV]\s*\d+(?:[._-]\d+)*)(?:\s*)$/iu);
+  if(pipe&&!VARIANT_FLAG.test(pipe[1].trim()))return pipe[1].trim();
+  // Version: 织界V659、方亦楷2.0、【小冰块】 v3 (handled above).
+  const version=text.match(/^(.{2,24}?)\s*[vV]\s*\d+(?:[._-]\d+)*\s*$/u)
+    ||text.match(/^([\p{Script=Han}]{2,24})\s*\d+(?:[._-]\d+)+\s*$/u);
   if(version)return version[1].trim();
+  const bracketedVariant=text.match(/^(.{2,24}?)\s*[【\[（(](重制|重置|新版|旧版|正式版|内测版|测试版|修订|复刻)[】\]）)]\s*$/u);
+  if(bracketedVariant)return bracketedVariant[1].trim();
+  // Theme family: iOS紫色 / iOS蓝色; only recognize this explicit named prefix.
+  if(/^iOS(?=[\p{Script=Han}])/iu.test(text))return 'iOS';
   return '';
 }
 export function planSmartGroups(options,resource){
   const assigned=resource?.assignments||{};
   const byName=new Map();
+  const evidenceFor=new Set();
   for(const option of options){
-    // Exact option values provide a stable identity within one native selector.
     if(Object.hasOwn(assigned,option.value))continue;
     const name=suggestedSeries(option.label);
     if(!name)continue;
-    if(!byName.has(name))byName.set(name,[]);
-    byName.get(name).push(option.value);
+    evidenceFor.add(name);
+    if(!byName.has(name))byName.set(name,new Set());
+    byName.get(name).add(option.value);
   }
-  // Match a plain base name only when another resource gives explicit evidence
-  // of the same named series, e.g. 🌸方亦楷 + 方亦楷【重制】.
+  // A bare name can join a series when another item gives explicit evidence.
   for(const option of options){
-    if(Object.hasOwn(assigned,option.value) || suggestedSeries(option.label))continue;
-    const base=String(option.label||'').trim()
-      .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]\s*)+/gu,'').trim();
-    if(byName.has(base) && !byName.get(base).includes(option.value))byName.get(base).push(option.value);
+    if(Object.hasOwn(assigned,option.value)||suggestedSeries(option.label))continue;
+    const name=cleanSeriesLabel(option.label);
+    if(evidenceFor.has(name))byName.get(name).add(option.value);
   }
   const manualNames=new Set((resource?.groups||[]).map(g=>g.name));
-  const groups=[...byName].filter(([name,values])=>values.length>=2 || (manualNames.has(name)&&values.length>=1))
-    .map(([name,values])=>({name,values}));
-  return {groups,total:groups.reduce((count,g)=>count+g.values.length,0)};
+  const groups=[...byName].filter(([name,values])=>values.size>=2 || (manualNames.has(name)&&values.size>=1))
+    .map(([name,values])=>({name,values:[...values]}));
+  const included=new Set(groups.flatMap(g=>g.values));
+  return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,o.value)&&!included.has(o.value)).length};
 }
 export function applySmartGroups(resource,plan){
   let added=0;

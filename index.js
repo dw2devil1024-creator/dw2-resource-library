@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.2-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.3-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, planSmartGroups, applySmartGroups
+  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_info, select#world_editor_select';
@@ -163,6 +163,19 @@ function setEnabled(yes){
   syncSetting();return true;
 }
 function sourceOptions(adapter){return optionsForSelect(adapter?.select)}
+function linkedWorldFor(adapter){
+  if(adapter?.source.category!=='world')return '';
+  return characterLinkedWorld(nativeContext());
+}
+function linkedWorldNotice(adapter){
+  const name=linkedWorldFor(adapter);
+  if(!name)return null;
+  const notice=el('div','world-bound');
+  notice.append(el('span','world-bound-label','角色卡关联世界书'),el('strong','world-bound-name',name),
+    el('small','world-bound-note','来自当前角色卡 · 不代表全局启用'));
+  return notice;
+}
+
 function selectedGroup(options,resource){
   const current=options.find(x=>x.selected);
   if(!current)return '';
@@ -229,11 +242,13 @@ function drawPopover(adapter){
   const manage=button('整理','link-button',()=>{closePopover();openManager(adapter.source.id)});
   const close=button('','icon-button',closePopover);close.append(icon('close'));close.setAttribute('aria-label','关闭');
   head.append(headline,manage,close);content.append(head);
+  const boundNotice=linkedWorldNotice(adapter);if(boundNotice)content.append(boundNotice);
   const search=el('input','search');search.type='search';search.placeholder='搜索名称或分类…';search.autocomplete='off';search.value=query;
   const focusHad=content.contains(document.activeElement) && document.activeElement?.matches('input[type="search"]');
   search.addEventListener('input',()=>{query=search.value;const pos=search.selectionStart;drawPopover(adapter);const next=popover?.querySelector('.dw2rl-search');if(next){next.focus();try{next.setSelectionRange(pos,pos)}catch{}}});
   content.append(search);
   const options=sourceOptions(adapter),resource=ensureResource(state,adapter.source.id);
+  const linkedWorld=linkedWorldFor(adapter);
   const groups=groupOptions(options,resource,state.autoGroup);
   const list=el('div','groups');
   const needle=query.trim().toLocaleLowerCase();
@@ -261,6 +276,7 @@ function drawPopover(adapter){
         const picked=button('','option'+(item.selected?' is-picked':''),()=>performSelect(adapter,item.value));
         picked.title=item.label;
         picked.append(el('span','option-label',item.label));
+        if(linkedWorld && item.label===linkedWorld)picked.append(el('small','bound-marker','角色卡关联'));
         if(item.selected)picked.append(el('span','selected-mark','✓'));
         entries.append(picked);
       }
@@ -336,21 +352,21 @@ function assign(adapter,item,groupId){
 }
 function smartOrganize(adapter){
   const record=ensureResource(state,adapter.source.id);
-  const proposal=planSmartGroups(sourceOptions(adapter),record);
+  const proposal=planSmartGroups(sourceOptions(adapter),record,{allowSingletons:adapter.source.category==='world'});
   if(!proposal.groups.length){
-    notify('暂时没有足够明确的同系列资源。为避免误分类，请在「未分类」中手动整理。','info');return;
+    notify('暂时没有足够明确的同系列资源。你可以在「未分类」中手动整理。','info');return;
   }
-  const summary=proposal.groups.map(g=>g.name+'（'+g.values.length+'）').join('、');
+  const summary=proposal.groups.slice(0,8).map(g=>g.name+'（'+g.values.length+'）').join('、')+(proposal.groups.length>8?'等':'');
   overlayPrompt('智能整理预览','',()=>{
     const latest=ensureResource(state,adapter.source.id);
-    const safePlan=planSmartGroups(sourceOptions(adapter),latest);
+    const safePlan=planSmartGroups(sourceOptions(adapter),latest,{allowSingletons:adapter.source.category==='world'});
     if(!safePlan.groups.length)return false;
     applySmartGroups(latest,safePlan);
     saveData();
     if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
     notify('已整理 '+safePlan.total+' 项分类记录；原始资源未修改。','success');
     return true;
-  },{confirmOnly:true,message:'识别到 '+proposal.groups.length+' 个明确系列，共 '+proposal.total+' 项：'+summary+'。另外 '+proposal.remaining+' 项仍待分类，可在「未分类」中手动整理。已分类的资源保持不变；不修改原始文件。'});
+  },{confirmOnly:true,message:'预计生成或合并 '+proposal.groups.length+' 个分类，共 '+proposal.total+' 项：'+summary+'。'+(adapter.source.category==='world'?'本次允许单本世界书独立成组（'+proposal.singletons+' 个单本分类）。':'')+'另有 '+proposal.remaining+' 项暂不处理。已手动归类的资源保持原样；不修改原始文件。'});
 }
 function exportGroups(){
   const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,version:VERSION,exportedAt:new Date().toISOString()};
@@ -403,6 +419,7 @@ function renderManager(){
     picker.addEventListener('change',()=>{managedSourceId=picker.value;managerQuery='';managerInitializedSource='';renderManager()});sourceHeading.append(picker);
   }
   content.append(sourceHeading);
+  const binding=linkedWorldNotice(adapter);if(binding)content.append(binding);
   const controls=el('div','manager-actions');
   controls.append(button('＋ 新建分类','primary-btn',()=>makeGroup(adapter)),button('智能整理','soft-btn',()=>smartOrganize(adapter)),button('导出备份','soft-btn',exportGroups));
   content.append(controls);

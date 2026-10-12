@@ -20,6 +20,8 @@ with sync_playwright() as p:
     page.set_content(html)
     # Mock only Select2 lifecycle and dropdown DOM. Actual TT host testing is separate.
     page.add_script_tag(content="""
+    // Desktop-like TT: a persistent Select2 companion sits beside the select.
+    document.querySelector('#world_info').insertAdjacentHTML('afterend','<span id="mock-select2-shell" class="select2-container"></span>');
     window.jQuery=window.$=node=>{
       const regs=[];
       return {on(events,handler){events.split(' ').forEach(name=>{
@@ -205,7 +207,21 @@ with sync_playwright() as p:
     mobile.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【小冰块】小说').tap()
     assert mobile.locator('#mock-presets').input_value()=='ice2'
     assert mobile.evaluate('window.outsideTouch===0 && window.outsideMouse===0 && window.outsidePointer===0')
+    # Mobile TT often has no Select2 companion. The original global slot must
+    # become an in-place grouped multi-select, never a second standalone button.
+    assert mobile.locator('.dw2rl-native-trigger').count()==4
+    assert mobile.locator('#world_info').evaluate('(node)=>node.classList.contains("dw2rl-native-hidden")')
+    mobile.locator('.dw2rl-native-trigger').nth(2).tap()
+    assert mobile.locator('#dw2rl-popover .dw2rl-group-name').all_text_contents()==['古风','现代']
+    mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='古风').tap()
+    mobile.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【古风】大周世界').tap()
+    assert mobile.locator('#world_info').evaluate('(node)=>node.options[0].selected')
+    assert mobile.locator('#dw2rl-popover').is_visible()
+    mobile.locator('#dw2rl-popover .dw2rl-icon-button').tap()
+    mobile.locator('#disable').tap()
+    assert mobile.locator('#world_info').evaluate('(node)=>!node.classList.contains("dw2rl-native-hidden")')
+    assert mobile.locator('.dw2rl-native-trigger').count()==0
     assert not touch_errors,touch_errors
     touch_context.close()
-    print('PASS | Chromium 390×844: native Select2 global grouping, no duplicate button, shared worldbook folders, category singleton previews, mobile interactions and original selector restoration')
+    print('PASS | Chromium 390×844: native Select2 + mobile non-Select2 global grouping, no duplicate button, shared folders, multi-select and restoration')
     browser.close()

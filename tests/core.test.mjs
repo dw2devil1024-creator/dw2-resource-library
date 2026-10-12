@@ -45,3 +45,12 @@ assert.equal(smart.assignments.ice1,smart.assignments.ice2);
 assert.equal(smart.groups.length,2);
 assert.equal(planSmartGroups(smartOptions,smart).total,0);
 console.log('DW2 Resource Library: smart preview, non-destructive merge, repeat idempotency passed');
+
+const variations=planSmartGroups([
+ {value:'one',label:'🌸方亦楷'},
+ {value:'two',label:'方亦楷【重制】'},
+ {value:'unrelated',label:'方亦楷的朋友'}
+],{groups:[],assignments:{}});
+assert.equal(variations.total,2);
+assert.equal(variations.groups[0].name,'方亦楷');
+console.log('DW2 Resource Library: versioned series and plain base names merge safely');

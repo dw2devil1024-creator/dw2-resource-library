@@ -26,6 +26,22 @@ with sync_playwright() as p:
     page.locator('#enable').click();page.wait_for_timeout(250)
     assert page.locator('.dw2rl-native-trigger').count()==3
     assert page.locator('select.dw2rl-native-hidden').count()==3
+    # Both new settings actions are present and the settings panel follows
+    # Little Things even when that extension mounts later.
+    assert page.locator('#dw2rl-settings .dw2rl-settings-actions button').all_text_contents()==[
+      '打开资源整理','重新识别','检查并更新','刷新酒馆'
+    ]
+    page.evaluate("""() => {
+      const host=document.getElementById('extensions_settings2');
+      const shelf=document.createElement('div');shelf.id='jd-bookshelf-settings';
+      const preset=document.createElement('div');preset.id='dw2-preset-console-settings';
+      const little=document.createElement('div');little.id='dw2-lt-settings';
+      host.append(shelf,preset,little);
+    }""")
+    page.wait_for_timeout(120)
+    assert page.locator('#dw2rl-settings').evaluate(
+      '(node)=>node.previousElementSibling?.id==="dw2-lt-settings"'
+    )
     # TT often closes its native settings drawer on document-level outside clicks.
     # The body's portalled group dropdown must *not* bubble those clicks.
     page.evaluate("""() => {window.ttOutsideClicks=0;window.ttOutsidePointers=0;

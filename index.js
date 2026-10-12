@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.7-beta.2 | S.A. · DW2
+ * DW2 · Resource Library v0.1.8-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, planSmartGroups, applySmartGroups, characterLinkedWorld
+  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
@@ -76,6 +76,18 @@ function mergeWorldBookFolders(){
   }
   if(changed)saveData();
 }
+let warnedAboutLegacyWorlds=false;
+function synchronizeWorldAssignments(select){
+  if(select?.id!=='world_editor_select')return;
+  const options=optionsForSelect(select);
+  if(!options.length)return; // Ignore TT's temporary empty list during refresh.
+  const result=migrateWorldAssignments(state,options);
+  if(result.changed)saveData();
+  if(result.uncertain && !warnedAboutLegacyWorlds){
+    warnedAboutLegacyWorlds=true;
+    notify('部分旧世界书分类因删除或排序变化无法确定原归属，旧记录已安全备份；请检查“未分类”，不要再次智能整理覆盖。','warning');
+  }
+}
 const folderSourceId=adapter=>adapter?.source?.category==='world'?'world:editor':adapter.source.id;
 const folderRecord=adapter=>ensureResource(state,folderSourceId(adapter));
 function saveData(){
@@ -141,11 +153,13 @@ function connect(select,source){
   if(style.fontFamily)trigger.style.fontFamily=style.fontFamily;
   if(style.fontSize)trigger.style.fontSize=style.fontSize;
   adapter.observer=new MutationObserver(()=>{
+    synchronizeWorldAssignments(select);
     refreshTrigger(adapter);
     if(popover?.dataset.source===source.id)drawPopover(adapter);
   });
   adapter.observer.observe(select,{childList:true,subtree:true,attributes:true,attributeFilter:['selected','value','disabled']});
-  adapters.set(select,adapter);sourceMap.set(source.id,select);refreshTrigger(adapter);
+  adapters.set(select,adapter);sourceMap.set(source.id,select);
+  synchronizeWorldAssignments(select);refreshTrigger(adapter);
 }
 function deactivateSelectors(){
   closePopover();
@@ -187,7 +201,10 @@ function setEnabled(yes){
   if(state.enabled)scan();else deactivateSelectors();
   syncSetting();return true;
 }
-function sourceOptions(adapter){return optionsForSelect(adapter?.select)}
+function sourceOptions(adapter){
+  synchronizeWorldAssignments(adapter?.select);
+  return optionsForSelect(adapter?.select);
+}
 function linkedWorldFor(adapter){
   if(adapter?.source.category!=='world')return '';
   return characterLinkedWorld(nativeContext());
@@ -381,8 +398,9 @@ function removeGroup(adapter,group){
 }
 function assign(adapter,item,groupId){
   const record=folderRecord(adapter);
-  if(groupId && record.groups.some(g=>g.id===groupId))record.assignments[item.value]=groupId;
-  else delete record.assignments[item.value];
+  const key=assignmentKey(item);
+  if(groupId && record.groups.some(g=>g.id===groupId))record.assignments[key]=groupId;
+  else delete record.assignments[key];
   saveData();
   if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
 }
@@ -410,7 +428,7 @@ function smartOrganize(adapter){
     message:explain(true),onToggle:checked=>explain(checked)});
 }
 function exportGroups(){
-  const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,version:VERSION,exportedAt:new Date().toISOString()};
+  const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,worldMigrationBackup:state.worldMigrationBackup,version:VERSION,exportedAt:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   try{
@@ -532,7 +550,7 @@ function drawManagerGroups(list,adapter,record,options){
         for(const candidate of [{id:'',name:'自动／未分类'},...record.groups]){
           const option=document.createElement('option');option.value=candidate.id;
           option.textContent=candidate.name;
-          option.selected=(record.assignments[item.value]||'')===candidate.id;
+          option.selected=(record.assignments[assignmentKey(item)]||'')===candidate.id;
           placement.append(option);
         }
         placement.addEventListener('change',()=>{
@@ -677,7 +695,7 @@ function onDOMChange(records){
 }
 function start(){
   if(alive)return;
-  alive=true;loadData();mergeWorldBookFolders();
+  alive=true;warnedAboutLegacyWorlds=false;loadData();mergeWorldBookFolders();
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));

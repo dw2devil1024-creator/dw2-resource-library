@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
-/* DW2 · Resource Library | S.A. · DW2 | v0.1.0-beta.1 */
+/* DW2 · Resource Library | S.A. · DW2 | v0.1.1-beta.1 */
 /* The in-place selector respects TT's current SmartTheme tokens.
    The full manager deliberately uses DW2 Clear Mist independently. */
 select.dw2rl-native-hidden {
@@ -92,8 +92,10 @@ select.dw2rl-native-hidden {
   display:flex;flex-direction:column;width:min(420px,100%);height:auto;
   max-height:min(680px,calc(100dvh - 38px));min-height:270px;overflow:hidden;
   border:1px solid rgba(202,225,236,.22);border-top-color:rgba(232,246,252,.32);
-  border-radius:12px;background:linear-gradient(155deg,rgba(81,96,105,.48),rgba(48,44,47,.59));
-  backdrop-filter:blur(16px) saturate(114%);-webkit-backdrop-filter:blur(16px) saturate(114%);
+  border-radius:12px;
+  /* Clear Mist, adjusted for a text-heavy manager: background visible only subtly. */
+  background:linear-gradient(155deg,rgba(66,77,87,.91),rgba(40,40,47,.95));
+  backdrop-filter:blur(22px) saturate(112%);-webkit-backdrop-filter:blur(22px) saturate(112%);
   box-shadow:0 16px 38px rgba(0,0,0,.20),inset 0 1px rgba(255,255,255,.035);
   color:rgba(251,249,246,.97);text-shadow:0 1px 2px rgba(9,17,24,.28);
 }
@@ -108,7 +110,7 @@ select.dw2rl-native-hidden {
 #dw2rl-manager .dw2rl-manager-content{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:0 18px 16px}
 #dw2rl-manager .dw2rl-source-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0 12px;color:rgba(245,244,241,.85);font-size:11px}
 #dw2rl-manager .dw2rl-source-picker{flex:0 1 53%;max-width:60%;height:31px;border:1px solid rgba(226,245,252,.21)!important;border-radius:7px;background:rgba(49,51,56,.66)!important;color:#faf8f7!important;font:11px 'Noto Serif SC',serif!important}
-#dw2rl-manager .dw2rl-manager-actions{display:flex;gap:8px;margin-bottom:12px}
+#dw2rl-manager .dw2rl-manager-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:12px}
 #dw2rl-manager button{font-family:'Noto Serif SC','Songti SC',serif!important;cursor:pointer}
 #dw2rl-manager .dw2rl-primary-btn,#dw2rl-manager .dw2rl-soft-btn,#dw2rl-manager .dw2rl-danger-btn{
   flex:1 1 auto;min-height:34px;padding:5px 8px!important;
@@ -119,7 +121,7 @@ select.dw2rl-native-hidden {
 #dw2rl-manager .dw2rl-primary-btn{border-color:rgba(203,229,242,.36)!important;background:rgba(184,220,234,.14)!important}
 #dw2rl-manager .dw2rl-danger-btn{border-color:rgba(244,180,182,.4)!important;color:#ffe1e2!important}
 #dw2rl-manager .dw2rl-manager-groups{display:flex;flex-direction:column;gap:6px;margin-bottom:13px}
-#dw2rl-manager .dw2rl-manager-group{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid rgba(202,225,236,.15);border-radius:8px;background:rgba(255,255,255,.035)}
+#dw2rl-manager .dw2rl-manager-group{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid rgba(202,225,236,.15);border-radius:8px;background:rgba(255,255,255,.055)}
 #dw2rl-manager .dw2rl-manager-group>svg{flex:none;width:14px;height:14px;color:rgba(232,235,239,.72)}
 #dw2rl-manager .dw2rl-group-text{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #dw2rl-manager .dw2rl-manager-group>small{color:rgba(232,235,239,.58);font-size:9px}
@@ -137,7 +139,7 @@ select.dw2rl-native-hidden {
 #dw2rl-manager .dw2rl-assign{flex:0 0 41%;max-width:41%;height:29px;min-height:29px;padding:3px!important;border:1px solid rgba(202,225,236,.18)!important;border-radius:6px!important;background:rgba(44,50,56,.72)!important;color:#f5f5f4!important;box-shadow:none!important;font:10px 'Noto Serif SC',serif!important}
 #dw2rl-manager .dw2rl-manager-note,#dw2rl-manager .dw2rl-manager-hint{font-size:10px;line-height:1.7;color:rgba(232,235,239,.65);margin:11px 2px 0}
 #dw2rl-manager .dw2rl-empty{padding:24px 8px;text-align:center;font-size:11px;opacity:.68}
-#dw2rl-manager .dw2rl-dialog-backdrop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(7,10,14,.65);z-index:3}
+#dw2rl-manager .dw2rl-dialog-backdrop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(7,10,14,.75);z-index:3}
 #dw2rl-manager .dw2rl-confirm-dialog{display:flex;flex-direction:column;gap:11px;width:min(310px,100%);padding:18px;border:1px solid rgba(202,225,236,.27);border-radius:11px;background:linear-gradient(155deg,rgba(72,83,93,.97),rgba(40,40,48,.97));box-shadow:0 14px 36px rgba(0,0,0,.25)}
 #dw2rl-manager .dw2rl-confirm-dialog>strong{font-size:13px;font-weight:600}
 #dw2rl-manager .dw2rl-dialog-message{font-size:11px;line-height:1.8;color:rgba(250,245,246,.84);margin:0}
@@ -164,3 +166,5 @@ select.dw2rl-native-hidden {
   #dw2rl-manager .dw2rl-manager-panel{max-height:calc(100dvh - 25px)}
 }
 @media (prefers-reduced-motion:reduce){#dw2rl-popover .dw2rl-group-chevron{transition:none!important}}
+
+@media (max-width:350px){#dw2rl-manager .dw2rl-manager-actions{gap:5px}#dw2rl-manager .dw2rl-manager-actions button{font-size:10px!important;padding:4px 3px!important}}

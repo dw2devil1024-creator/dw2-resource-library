@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.7-beta.2';
+export const VERSION = '0.1.8-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -31,7 +31,7 @@ export function sourceFromSelect(select) {
   const identifier = normalizedPresetKey(raw);
   return { id:'preset:'+identifier, category:'preset', label:PRESET_LABELS[identifier] || '预设 · '+String(raw).trim() };
 }
-export function createEmptyState() { return { schemaVersion:1,enabled:false,autoGroup:true,resources:{} }; }
+export function createEmptyState() { return { schemaVersion:2,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{} }; }
 export function normalizeState(input) {
   const state=createEmptyState();
   if (!input || typeof input!=='object') return state;
@@ -56,12 +56,78 @@ export function normalizeState(input) {
       state.resources[id]={groups,assignments};
     }
   }
+  const backups=input.worldMigrationBackup;
+  if(backups && typeof backups==='object' && !Array.isArray(backups)){
+    for(const id of ['world:editor','world:global']){
+      const raw=backups[id];
+      if(raw && typeof raw==='object' && !Array.isArray(raw)){
+        state.worldMigrationBackup[id]=Object.fromEntries(
+          Object.entries(raw).filter(([key,val])=>
+            typeof val==='string' && key.length<=512 && val.length<=56).slice(0,3000));
+      }
+    }
+  }
   return state;
 }
 export function ensureResource(state, sourceId){
   if(!state.resources[sourceId])state.resources[sourceId]={groups:[],assignments:{}};
   return state.resources[sourceId];
 }
+/** Native TT uses a mutable index to select a world book. Grouping keys
+ * must instead use its file name, without changing the native selection. */
+export const WORLD_BOOK_KEY_PREFIX='worldbook:';
+export function worldBookKey(name){return WORLD_BOOK_KEY_PREFIX+String(name??'').trim().normalize('NFC');}
+export function assignmentKey(option){return String(option?.key ?? option?.value ?? '');}
+/** Preserve legacy numeric assignments and recover unambiguous singleton
+ * folders by name when deletion/reordering has shifted native indices.
+ * Unknown mappings stay in worldMigrationBackup rather than being guessed. */
+export function migrateWorldAssignments(state,options){
+  if(!Array.isArray(options)||!options.length)return {changed:false,recovered:0,uncertain:0};
+  const byNative=new Map(options.map(item=>[String(item.value),item]));
+  const byName=new Map(options.map(item=>[String(item.label),item]));
+  if(!state.worldMigrationBackup)state.worldMigrationBackup={};
+  let changed=false,recovered=0,uncertain=0;
+  for(const id of ['world:editor','world:global']){
+    const record=state.resources?.[id];
+    if(!record?.assignments || !Array.isArray(record.groups))continue;
+    const old=Object.entries(record.assignments).filter(([key])=>!key.startsWith(WORLD_BOOK_KEY_PREFIX));
+    if(!old.length)continue;
+    if(!state.worldMigrationBackup[id]){
+      state.worldMigrationBackup[id]=Object.fromEntries(old);changed=true;
+    }
+    const byGroup=new Map();
+    for(const [oldValue,groupId] of old){
+      if(!byGroup.has(groupId))byGroup.set(groupId,[]);
+      byGroup.get(groupId).push(oldValue);
+    }
+    const anchors=new Map();
+    let shifted=false;
+    for(const group of record.groups){
+      const legacy=byGroup.get(group.id)||[];
+      if(legacy.length!==1)continue;
+      const item=byName.get(group.name);
+      if(!item)continue;
+      const stable=assignmentKey(item);
+      if(record.assignments[stable]&&record.assignments[stable]!==group.id)continue;
+      anchors.set(legacy[0],{item,groupId:group.id});
+      if(String(item.value)!==legacy[0])shifted=true;
+    }
+    for(const {item,groupId} of anchors.values()){
+      const key=assignmentKey(item);
+      if(!record.assignments[key]){record.assignments[key]=groupId;changed=true;recovered++;}
+    }
+    for(const [legacyValue,groupId] of old){
+      if(anchors.has(legacyValue))continue;
+      const item=byNative.get(legacyValue);
+      if(!item||shifted){uncertain++;continue;}
+      const key=assignmentKey(item);
+      if(!record.assignments[key]){record.assignments[key]=groupId;changed=true;recovered++;}
+    }
+    for(const [key] of old){delete record.assignments[key];changed=true;}
+  }
+  return {changed,recovered,uncertain};
+}
+
 /** Read the current character card's linked lorebook; never infer a link from
  * a selected editor option or from global activation. Read-only. */
 export function characterLinkedWorld(context){
@@ -81,7 +147,7 @@ export function groupOptions(options,resource,autoGroup=true){
   const manual=new Map(resource?.groups?.map(g=>[g.id,{key:'manual:'+g.id,name:g.name,items:[],kind:'manual'}])||[]);
   const remaining=[];
   for(const option of options){
-    const target=manual.get(resource?.assignments?.[option.value]);
+    const target=manual.get(resource?.assignments?.[assignmentKey(option)]);
     if(target)target.items.push(option);else remaining.push(option);
   }
   const autoCounts=new Map();
@@ -122,9 +188,14 @@ export function optionsForSelect(select){
     // TT editor placeholder is a control action, not a real world-book file.
     if(select.id==='world_editor_select' && /^[-—]{2,}\s*选择以编辑\s*[-—]{2,}$/u.test(label))return false;
     return true;
-  }).map(option=>({
-    value:String(option.value),label:String(option.textContent||'').replace(/\s+/g,' ').trim(),selected:!!option.selected
-  }));
+  }).map(option=>{
+    const label=String(option.textContent||'').replace(/\s+/g,' ').trim();
+    return {
+      value:String(option.value),label,selected:!!option.selected,
+      ...(select.id==='world_editor_select'||select.id==='world_info'
+        ? {key:worldBookKey(label)} : {}),
+    };
+  });
 }
 export function safeFilename(value){return String(value||'').replace(/[^\w\-\u4e00-\u9fa5]/g,'_').slice(0,80)}
 
@@ -167,18 +238,18 @@ export function planSmartGroups(options,resource,{allowSingletons=false}={}){
   const byName=new Map();
   const evidenceFor=new Set();
   for(const option of options){
-    if(Object.hasOwn(assigned,option.value))continue;
+    if(Object.hasOwn(assigned,assignmentKey(option)))continue;
     const name=suggestedSeries(option.label);
     if(!name)continue;
     evidenceFor.add(name);
     if(!byName.has(name))byName.set(name,new Set());
-    byName.get(name).add(option.value);
+    byName.get(name).add(assignmentKey(option));
   }
   // A bare name can join a series when another item gives explicit evidence.
   for(const option of options){
-    if(Object.hasOwn(assigned,option.value)||suggestedSeries(option.label))continue;
+    if(Object.hasOwn(assigned,assignmentKey(option))||suggestedSeries(option.label))continue;
     const name=cleanSeriesLabel(option.label);
-    if(evidenceFor.has(name))byName.get(name).add(option.value);
+    if(evidenceFor.has(name))byName.get(name).add(assignmentKey(option));
   }
   const manualNames=new Set((resource?.groups||[]).map(g=>g.name));
   const groups=[...byName].filter(([name,values])=>values.size>=2 || (manualNames.has(name)&&values.size>=1))
@@ -189,13 +260,13 @@ export function planSmartGroups(options,resource,{allowSingletons=false}={}){
   if(allowSingletons){
     const named=new Map(groups.map(g=>[g.name,g]));
     for(const item of options){
-      if(Object.hasOwn(assigned,item.value)||included.has(item.value))continue;
+      if(Object.hasOwn(assigned,assignmentKey(item))||included.has(assignmentKey(item)))continue;
       const name=suggestedSeries(item.label)||String(item.label||'').trim();
       if(!name)continue;
       let folder=named.get(name);
       if(!folder){folder={name,values:[]};groups.push(folder);named.set(name,folder)}
-      folder.values.push(item.value);
-      included.add(item.value);
+      folder.values.push(assignmentKey(item));
+      included.add(assignmentKey(item));
     }
   }
   return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,o.value)&&!included.has(o.value)).length,

@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DW2 · Resource Library / 功能预览</title><link rel="stylesheet" href="../style.css"><style>
+:root{--SmartThemeBodyColor:#ece4e3;--SmartThemeBorderColor:rgba(220,207,210,.25);--SmartThemeBlurTintColor:rgba(55,49,49,.84);--SmartThemeQuoteColor:#c8dce7}
+body{margin:0;min-height:100vh;color:#eee9e8;font-family:'Noto Serif SC',serif;background:radial-gradient(ellipse at 20% 0%,#80706d,#3b393d 43%,#25282b);}
+.mock-header{height:100px;display:flex;align-items:center;padding:0 25px;justify-content:space-between;border-bottom:1px solid #ffffff20}
+.mock{max-width:480px;padding:25px;margin:auto}.mock h2{font-size:19px;font-weight:500}.mock-row{padding:15px;margin:12px 0;border:1px solid #ffffff29;border-radius:10px;display:flex;flex-direction:column;gap:10px}
+.mock-row select{background:rgba(55,49,49,.84);color:#eee9e8;border:1px solid #ffffff29;border-radius:8px;height:37px;padding:0 9px;width:100%}
+.mock-row>label{font-size:12px}.mock-button{border:1px solid #ffffff33;border-radius:6px;padding:12px;color:inherit;background:#ffffff18;cursor:pointer;margin:5px}
+#extensions_settings2{margin-top:12px}.inline-drawer{border-top:1px solid #ffffff25}.inline-drawer-header{padding:11px 9px;cursor:pointer}.inline-drawer-content{padding:10px}.mock-row .dw2rl-native-trigger{width:100%}
+#extensionsMenu{display:flex;flex-direction:column;width:220px;margin:4px}.notice{opacity:.75;font-size:11px;line-height:1.9}
+</style></head><body>
+<div class="mock-header"><strong>S.A. · DW2</strong><span>TT 选择器模拟预览</span></div>
+<main class="mock">
+<h2>资源选择测试</h2>
+<div class="mock-row"><label>对话补全预设</label><select data-preset-manager-for="openai" id="mock-presets">
+<option value="w659">织界V659</option><option value="ice1">【小冰块】日常</option><option value="ice2">【小冰块】小说</option><option value="ice3">【小冰块】沉浸</option><option value="classic">【经典】蓝调</option><option value="classic2">【经典】白水誓</option></select></div>
+<div class="mock-row"><label>美化主题</label><select id="themes"><option value="mist">纯透伦敦（杂志）</option><option value="a">【日间】奶白玻璃</option><option value="b">【日间】灰蓝</option><option value="c">【夜间】烟雾玻璃</option><option value="d">【夜间】暗金</option></select></div>
+<div class="mock-row"><label>世界书（全局启用）</label><select id="world_info" multiple size="3"><option value="a">【古风】大周世界</option><option value="b">【古风】皇城</option><option value="c">【现代】京市</option><option value="d">【现代】校园</option></select></div>
+<div class="mock-row"><label>世界书（编辑）</label><select id="world_editor_select"><option value="a">大周世界</option><option value="b">京市</option></select></div>
+<button class="mock-button" id="enable">启用测试版</button><button class="mock-button" id="disable">关闭测试版</button><button class="mock-button" id="open">打开资源总面板</button>
+<p class="notice">这是本地浏览器模拟界面。真实 TT 下拉框的可用性仍需 iPhone 实机验证。测试版默认关闭，不碰实际预设文件。</p>
+<div id="extensions_settings2"></div><div id="extensionsMenu"></div>
+</main>
+<script>window.SillyTavern={getContext:()=>window.stCtx};window.stCtx={extensionSettings:{},saveSettingsDebounced(){window.saveCount=(window.saveCount||0)+1}};window.changed=[];document.addEventListener('change',e=>{if(e.target.matches('select[data-preset-manager-for],#themes,#world_info,#world_editor_select'))window.changed.push([e.target.id,e.target.value])});</script>
+<script type="module" src="../index.js"></script>
+<script>document.getElementById('enable').onclick=()=>window.DW2ResourceLibrary?.enable();document.getElementById('disable').onclick=()=>window.DW2ResourceLibrary?.disable();document.getElementById('open').onclick=()=>window.DW2ResourceLibrary?.open();</script>
+</body></html>

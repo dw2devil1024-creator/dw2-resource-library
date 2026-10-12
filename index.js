@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.0-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.1-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, optionsForSelect
+  ensureResource, sourceFromSelect, groupOptions, optionsForSelect, planSmartGroups, applySmartGroups
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_info, select#world_editor_select';
@@ -169,9 +169,16 @@ function selectedGroup(options,resource){
 }
 function positionPopover(anchor){
   if(!popover || !anchor)return;
+  // A detached/hidden native drawer must not leave a free-floating orphan.
+  if(!anchor.isConnected){closePopover();return}
+  for(let parent=anchor;parent && parent!==document.body;parent=parent.parentElement){
+    const style=getComputedStyle(parent);
+    if(style.display==='none'||style.visibility==='hidden'){closePopover();return}
+  }
   const box=anchor.getBoundingClientRect();
   const vw=document.documentElement.clientWidth||innerWidth;
   const vh=window.visualViewport?.height||innerHeight;
+  if(box.width<4||box.height<4||box.bottom<=0||box.top>=vh||box.right<=0||box.left>=vw){closePopover();return}
   const width=Math.min(Math.max(box.width,255),Math.min(vw-20,390));
   const left=Math.max(10,Math.min(vw-width-10,box.left));
   const below=vh-box.bottom,above=box.top;
@@ -188,6 +195,12 @@ function openPopover(select){
   query='';openedGroup='';
   popover=el('div','popover');popover.id=POP_ID;popover.dataset.source=adapter.source.id;
   popover.setAttribute('role','dialog');popover.setAttribute('aria-label','按分类选择'+adapter.source.label);
+  // The popover is portalled to body to avoid clipped TT drawers. Prevent
+  // its clicks/touches from reaching native outside-of-drawer closers.
+  // Do not preventDefault: retain iOS scrolling, text input and native taps.
+  for(const type of ['pointerdown','pointerup','click','touchstart','touchend']){
+    popover.addEventListener(type,event=>event.stopPropagation());
+  }
   document.body.append(popover);
   drawPopover(adapter);positionPopover(adapter.trigger);
 }
@@ -313,6 +326,24 @@ function assign(adapter,item,groupId){
   saveData();
   if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
 }
+function smartOrganize(adapter){
+  const record=ensureResource(state,adapter.source.id);
+  const proposal=planSmartGroups(sourceOptions(adapter),record);
+  if(!proposal.groups.length){
+    notify('暂时没有找到足够明确的同系列名称。你仍可以手动新建分类。','info');return;
+  }
+  const summary=proposal.groups.map(g=>g.name+'（'+g.values.length+'）').join('、');
+  overlayPrompt('智能整理预览','',()=>{
+    const latest=ensureResource(state,adapter.source.id);
+    const safePlan=planSmartGroups(sourceOptions(adapter),latest);
+    if(!safePlan.groups.length)return false;
+    applySmartGroups(latest,safePlan);
+    saveData();
+    if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
+    notify('已整理 '+safePlan.total+' 项分类记录；原始资源未修改。','success');
+    return true;
+  },{confirmOnly:true,message:'将把有明确名称前缀、同系列版本的 '+proposal.total+' 个资源归入 '+proposal.groups.length+' 个分类：'+summary+'。已手动分类的资源保持不变；不改动预设、世界书、美化文件。'});
+}
 function exportGroups(){
   const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,version:VERSION,exportedAt:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -365,7 +396,7 @@ function renderManager(){
   }
   content.append(sourceHeading);
   const controls=el('div','manager-actions');
-  controls.append(button('＋ 新建分类','primary-btn',()=>makeGroup(adapter)),button('导出分类备份','soft-btn',exportGroups));
+  controls.append(button('＋ 新建分类','primary-btn',()=>makeGroup(adapter)),button('智能整理','soft-btn',()=>smartOrganize(adapter)),button('导出备份','soft-btn',exportGroups));
   content.append(controls);
   const record=ensureResource(state,adapter.source.id);
   if(record.groups.length){
@@ -448,6 +479,13 @@ function documentClick(e){
   if(e.target.closest('#extensions_settings,#extensions_settings2,#ai-config-button,#user-settings-button,#WI-SP-button,#extensionsMenuButton,#themes'))scheduleScan();
 }
 function documentKeydown(e){if(e.key==='Escape'){if(manager)closeManager();else closePopover()}}
+function onViewportChange(){
+  if(!popover)return;
+  const select=sourceMap.get(popover.dataset.source);
+  const adapter=adapters.get(select);
+  if(!adapter){closePopover();return}
+  positionPopover(adapter.trigger);
+}
 function onDOMChange(records){
   let shouldMount=false,shouldScan=false;
   for(const record of records){
@@ -469,6 +507,11 @@ function start(){
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));
+  window.addEventListener('resize',onViewportChange,{passive:true});listeners.push(()=>window.removeEventListener('resize',onViewportChange));
+  // Subtree scrolls in TT settings should keep the popup beside its selector.
+  document.addEventListener('scroll',onViewportChange,{passive:true,capture:true});listeners.push(()=>document.removeEventListener('scroll',onViewportChange,true));
+  window.visualViewport?.addEventListener('resize',onViewportChange,{passive:true});
+  listeners.push(()=>window.visualViewport?.removeEventListener('resize',onViewportChange));
   watcher=new MutationObserver(onDOMChange);watcher.observe(document.body,{childList:true,subtree:true});
   if(state.enabled)scan();
   // Some TT pages construct select widgets after initial DOM load.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -54,3 +54,35 @@ const variations=planSmartGroups([
 assert.equal(variations.total,2);
 assert.equal(variations.groups[0].name,'方亦楷');
 console.log('DW2 Resource Library: versioned series and plain base names merge safely');
+
+// Manager displays empty user folders AND an always-present Unclassified bin.
+const emptyTree=managerGroups([{value:'a',label:'【织界】原版'}, {value:'b',label:'【织界】新版'}],{
+  groups:[{id:'custom1',name:'已收藏'}],assignments:{}},true);
+assert.deepEqual(emptyTree.map(g=>g.name),['已收藏','织界','未分类']);
+assert.equal(emptyTree.at(-1).items.length,0);
+assert.equal(emptyTree[0].items.length,0);
+const withLoose=managerGroups([{value:'a',label:'独立美化'}, {value:'b',label:'另一套美化'}],{groups:[],assignments:{}},true);
+assert.equal(withLoose.at(-1).items.length,2);
+
+// Similar names are grouped only when there is an explicit family marker.
+const themes=planSmartGroups([
+  {value:'iosp',label:'iOS紫色'}, {value:'iosb',label:'iOS蓝色'},
+  {value:'puppy',label:'Puppy'}, {value:'movie',label:'《City of Stars》'},
+  {value:'star',label:'《in time》'}],{groups:[],assignments:{}});
+assert.equal(themes.total,2);
+assert.deepEqual(themes.groups.map(g=>g.name),['iOS']);
+assert.equal(themes.remaining,3);
+assert.equal(suggestedSeries('织界V659'),'织界');
+assert.equal(suggestedSeries('方亦楷2.0'),'方亦楷');
+assert.equal(suggestedSeries('【重制】方亦楷'),'');
+const characterSeries=planSmartGroups([
+ {value:'one',label:'🌸方亦楷'}, {value:'two',label:'方亦楷【重制】'},
+ {value:'three',label:'【重制】方亦楷'}, {value:'four',label:'另一个无关人'}],{groups:[],assignments:{}});
+assert.equal(characterSeries.total,3);
+assert.equal(characterSeries.remaining,1);
+const worldEditorSelect={id:'world_editor_select',options:[
+  {disabled:false,textContent:'--- 选择以编辑 ---',value:'',selected:true},
+  {disabled:false,textContent:'京市',value:'real',selected:false}]};
+assert.equal(optionsForSelect(worldEditorSelect).length,1);
+assert.equal(optionsForSelect(worldEditorSelect)[0].value,'real');
+console.log('DW2 Resource Library: manager tree, iOS/theme grouping, version families, native editor placeholder passed');

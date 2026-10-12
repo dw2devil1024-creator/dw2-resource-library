@@ -56,7 +56,17 @@ with sync_playwright() as p:
     page.locator('#dw2rl-manager .dw2rl-primary-btn').first.click()
     page.locator('.dw2rl-name-input').fill('我的精选')
     page.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
-    assert page.locator('.dw2rl-group-text').all_text_contents()==['我的精选']
+    names=page.locator('.dw2rl-manager-folder-name').all_text_contents()
+    assert names==['我的精选','小冰块','经典','未分类'],names
+    assert page.locator('.dw2rl-manager-folder[data-group="loose"] .dw2rl-manager-folder-count').inner_text()=='1'
+    manual=page.locator('.dw2rl-manager-folder-toggle').filter(has_text='我的精选')
+    assert manual.get_attribute('aria-expanded')=='false'
+    manual.click()
+    assert manual.get_attribute('aria-expanded')=='true'
+    manual.click()
+    assert manual.get_attribute('aria-expanded')=='false'
+    # Unclassified is visible by default, and every resource can be moved from it.
+    assert page.locator('.dw2rl-manager-folder[data-group="loose"] .dw2rl-assign').count()==1
     manager_panel=page.locator('#dw2rl-manager .dw2rl-manager-panel')
     assert manager_panel.evaluate('el => parseFloat(getComputedStyle(el).backgroundImage.match(/0[.]9[0-9]/)[0])') >= .90
     page.locator('.dw2rl-assign').first.select_option(label='我的精选')
@@ -72,8 +82,16 @@ with sync_playwright() as p:
     assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].groups.length") == 1
     page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
     page.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
-    groups_after=page.locator('.dw2rl-group-text').all_text_contents()
+    groups_after=page.locator('.dw2rl-manager-folder-name').all_text_contents()
     assert '我的精选' in groups_after and '小冰块' in groups_after and '经典' in groups_after
+    assert groups_after[-1]=='未分类'
+    assert page.locator('.dw2rl-manager-folder[data-group="loose"] .dw2rl-manager-folder-count').inner_text()=='0'
+    # Click a newly saved folder, inspect its files, and close it again.
+    ice=page.locator('.dw2rl-manager-folder-toggle').filter(has_text='小冰块')
+    ice.click()
+    assert page.locator('.dw2rl-manager-folder').filter(has_text='小冰块').locator('.dw2rl-manager-item').count()==3
+    ice.click()
+    assert page.locator('.dw2rl-manager-folder').filter(has_text='小冰块').locator('.dw2rl-manager-item').count()==0
     assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].assignments.w659")
     page.screenshot(path='/mnt/data/DW2-Resource-Library-preview.png')
     page.locator('#dw2rl-manager .dw2rl-manager-close').click()
@@ -92,5 +110,36 @@ with sync_playwright() as p:
     assert page.locator('#dw2rl-popover .dw2rl-group').count()==3
     page.screenshot(path='/mnt/data/DW2-Resource-Library-dropdown.png')
     assert not errors, errors
-    print('PASS | Chromium 390×844: 4 source selectors, native preset and world-book changes, auto-group search, manager persistence, disable restore, conflict guard; no JS exceptions')
+    # Mobile touch regression: simulates TT's unpinned drawer being dismissed by a
+    # bubbled html touchstart/mousedown, and tests tapping a folder under it.
+    touch_context=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,device_scale_factor=2)
+    mobile=touch_context.new_page()
+    touch_errors=[]
+    mobile.on('pageerror',lambda e:touch_errors.append(str(e)))
+    mobile.set_content(html);mobile.add_script_tag(content=core+'\n'+app)
+    mobile.evaluate('''() => {
+      window.outsideTouch=0;window.outsideMouse=0;window.outsidePointer=0;
+      const track=name=>event=>{
+        if(event.target.closest?.('#dw2rl-popover'))window[name]++;
+      };
+      document.documentElement.addEventListener('touchstart',track('outsideTouch'));
+      document.documentElement.addEventListener('mousedown',track('outsideMouse'));
+      document.documentElement.addEventListener('pointermove',track('outsidePointer'));
+    }''')
+    mobile.locator('#enable').tap()
+    mobile.locator('.dw2rl-native-trigger').first.tap()
+    assert mobile.locator('#dw2rl-popover').is_visible()
+    # Initially selected unclassified; tapping other folders should open them.
+    mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='小冰块').tap()
+    assert mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='小冰块').get_attribute('aria-expanded')=='true'
+    assert mobile.locator('#dw2rl-popover .dw2rl-option').count()==3
+    mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='小冰块').tap()
+    assert mobile.locator('#dw2rl-popover .dw2rl-option').count()==0
+    mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='小冰块').tap()
+    mobile.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【小冰块】小说').tap()
+    assert mobile.locator('#mock-presets').input_value()=='ice2'
+    assert mobile.evaluate('window.outsideTouch===0 && window.outsideMouse===0 && window.outsidePointer===0')
+    assert not touch_errors,touch_errors
+    touch_context.close()
+    print('PASS | Chromium 390×844 desktop + mobile touch: grouping fold/unfold, independent unclassified bin, smart-preview, native selection, data preservation, conflict guard, TT drawer isolation; no JS exceptions')
     browser.close()

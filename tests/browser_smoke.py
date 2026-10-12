@@ -24,10 +24,23 @@ with sync_playwright() as p:
     page.locator('#enable').click();page.wait_for_timeout(250)
     assert page.locator('.dw2rl-native-trigger').count()==4
     assert page.locator('select.dw2rl-native-hidden').count()==4
+    # TT often closes its native settings drawer on document-level outside clicks.
+    # The body's portalled group dropdown must *not* bubble those clicks.
+    page.evaluate("""() => {window.ttOutsideClicks=0;window.ttOutsidePointers=0;
+      document.addEventListener('click', e => {
+        if(e.target.closest('#dw2rl-popover'))window.ttOutsideClicks++;
+      });
+      document.addEventListener('pointerdown',e => {
+        if(e.target.closest('#dw2rl-popover'))window.ttOutsidePointers++;
+      });
+    }""")
     # Presets: auto group, native selection, and stored current name.
     page.locator('.dw2rl-native-trigger').first.click()
     assert page.locator('#dw2rl-popover .dw2rl-group').count()==3
     page.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='小冰块').click()
+    assert page.evaluate('window.ttOutsideClicks===0 && window.ttOutsidePointers===0')
+    assert page.locator('#dw2rl-popover').is_visible()
+    assert page.locator('#dw2rl-popover .dw2rl-option').count()>=2
     page.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【小冰块】小说').click()
     assert page.locator('#mock-presets').input_value()=='ice2'
     assert page.evaluate('window.changed.at(-1)[1]')=='ice2'
@@ -44,10 +57,24 @@ with sync_playwright() as p:
     page.locator('.dw2rl-name-input').fill('我的精选')
     page.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
     assert page.locator('.dw2rl-group-text').all_text_contents()==['我的精选']
+    manager_panel=page.locator('#dw2rl-manager .dw2rl-manager-panel')
+    assert manager_panel.evaluate('el => parseFloat(getComputedStyle(el).backgroundImage.match(/0[.]9[0-9]/)[0])') >= .90
     page.locator('.dw2rl-assign').first.select_option(label='我的精选')
     saved=page.evaluate('window.stCtx.extensionSettings.dw2ResourceLibrary')
     assert saved['resources']['preset:openai']['groups'][0]['name']=='我的精选'
     assert saved['resources']['preset:openai']['assignments']['w659']
+    # Preview and confirm intelligent grouping without touching existing manual slots.
+    page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
+    assert '确认' in page.locator('.dw2rl-confirm-dialog').inner_text()
+    assert '小冰块' in page.locator('.dw2rl-dialog-message').inner_text()
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].groups.length") == 1
+    page.locator('.dw2rl-confirm-dialog .dw2rl-soft-btn').click()
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].groups.length") == 1
+    page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
+    page.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    groups_after=page.locator('.dw2rl-group-text').all_text_contents()
+    assert '我的精选' in groups_after and '小冰块' in groups_after and '经典' in groups_after
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].assignments.w659")
     page.screenshot(path='/mnt/data/DW2-Resource-Library-preview.png')
     page.locator('#dw2rl-manager .dw2rl-manager-close').click()
     page.locator('#disable').click()

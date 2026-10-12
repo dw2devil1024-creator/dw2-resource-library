@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.2-beta.1';
+export const VERSION = '0.1.3-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -61,6 +61,15 @@ export function normalizeState(input) {
 export function ensureResource(state, sourceId){
   if(!state.resources[sourceId])state.resources[sourceId]={groups:[],assignments:{}};
   return state.resources[sourceId];
+}
+/** Read the current character card's linked lorebook; never infer a link from
+ * a selected editor option or from global activation. Read-only. */
+export function characterLinkedWorld(context){
+  const id=context?.characterId;
+  if(id===undefined||id===null||id==='')return '';
+  const character=context?.characters?.[id];
+  const raw=character?.data?.extensions?.world ?? character?.extensions?.world;
+  return typeof raw==='string'?raw.trim():'';
 }
 /** Auto grouping is intentionally conservative: only explicit leading [labels]. */
 export function guessGroup(label){
@@ -153,7 +162,7 @@ export function suggestedSeries(label){
   if(/^iOS(?=[\p{Script=Han}])/iu.test(text))return 'iOS';
   return '';
 }
-export function planSmartGroups(options,resource){
+export function planSmartGroups(options,resource,{allowSingletons=false}={}){
   const assigned=resource?.assignments||{};
   const byName=new Map();
   const evidenceFor=new Set();
@@ -175,7 +184,22 @@ export function planSmartGroups(options,resource){
   const groups=[...byName].filter(([name,values])=>values.size>=2 || (manualNames.has(name)&&values.size>=1))
     .map(([name,values])=>({name,values:[...values]}));
   const included=new Set(groups.flatMap(g=>g.values));
-  return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,o.value)&&!included.has(o.value)).length};
+  // Only a world-book manager opts into one-book-per-folder. No singletons
+  // for presets/themes; existing manual resource assignments always win.
+  if(allowSingletons){
+    const named=new Map(groups.map(g=>[g.name,g]));
+    for(const item of options){
+      if(Object.hasOwn(assigned,item.value)||included.has(item.value))continue;
+      const name=suggestedSeries(item.label)||String(item.label||'').trim();
+      if(!name)continue;
+      let folder=named.get(name);
+      if(!folder){folder={name,values:[]};groups.push(folder);named.set(name,folder)}
+      folder.values.push(item.value);
+      included.add(item.value);
+    }
+  }
+  return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,o.value)&&!included.has(o.value)).length,
+    singletons:groups.filter(g=>g.values.length===1).length};
 }
 export function applySmartGroups(resource,plan){
   let added=0;

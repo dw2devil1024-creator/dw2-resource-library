@@ -42,6 +42,23 @@ with sync_playwright() as p:
     assert page.locator('#dw2rl-settings').evaluate(
       '(node)=>node.previousElementSibling?.id==="dw2-lt-settings"'
     )
+    # TT may put early-loaded Resource Library in #extensions_settings2 while
+    # later DW2 extensions mount in a separate #extensions_settings subtree.
+    # The old parent-equality guard silently prevented the reorder.
+    page.evaluate("""() => {
+      const other=document.createElement('div');other.id='extensions_settings';
+      document.body.append(other);
+      for(const id of ['jd-bookshelf-settings','dw2-preset-console-settings','dw2-lt-settings'])
+        other.append(document.getElementById(id));
+    }""")
+    page.wait_for_timeout(200)
+    assert page.locator('#dw2rl-settings').evaluate(
+      '(node)=>node.parentElement?.id==="extensions_settings" && node.previousElementSibling?.id==="dw2-lt-settings"'
+    )
+    # Confirm moving the entire drawer retains existing button handlers.
+    page.locator('#dw2rl-settings .dw2rl-settings-header').click()
+    assert page.locator('#dw2rl-settings .dw2rl-settings-content').is_visible()
+    page.locator('#dw2rl-settings .dw2rl-settings-header').click()
     # TT often closes its native settings drawer on document-level outside clicks.
     # The body's portalled group dropdown must *not* bubble those clicks.
     page.evaluate("""() => {window.ttOutsideClicks=0;window.ttOutsidePointers=0;
@@ -92,7 +109,14 @@ with sync_playwright() as p:
     # Unclassified is visible by default, and every resource can be moved from it.
     assert page.locator('.dw2rl-manager-folder[data-group="loose"] .dw2rl-assign').count()==1
     manager_panel=page.locator('#dw2rl-manager .dw2rl-manager-panel')
-    assert manager_panel.evaluate('el => parseFloat(getComputedStyle(el).backgroundImage.match(/0[.]9[0-9]/)[0])') >= .90
+    glass=manager_panel.evaluate("""el=>{
+      const style=getComputedStyle(el);
+      return {background:style.backgroundImage,backdrop:style.backdropFilter||style.webkitBackdropFilter};
+    }""")
+    tint=re.findall(r'rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([0-9.]+)\\)',glass['background'])
+    assert len(tint)>=2 and max(float(alpha) for _,_,_,alpha in tint)<.80,glass
+    assert all(int(red)>=int(blue) for red,green,blue,alpha in tint),glass
+    assert 'blur(30px)' in glass['backdrop'],glass
     page.locator('.dw2rl-assign').first.select_option(label='我的精选')
     saved=page.evaluate('window.stCtx.extensionSettings.dw2ResourceLibrary')
     assert saved['resources']['preset:openai']['groups'][0]['name']=='我的精选'

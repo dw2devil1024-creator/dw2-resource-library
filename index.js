@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.5-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.6-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -567,19 +567,15 @@ function syncSetting(){
 }
 function sortSettings(){
   const section=document.getElementById(SETTINGS_ID);
-  if(!section)return;
-  const host=document.querySelector('#extensions_settings2,#extensions_settings,.extensions_settings');
-  if(!host)return;
-  // Only move our own drawer; leave all other extensions' layout untouched.
-  // Little Things follows Preset Console, so Resource Library follows it.
+  if(!section?.isConnected)return;
+  // Other DW2 extensions can mount in a different TT settings container.
+  // The prior "anchor.parentElement === host" guard left this drawer at the top.
+  // Follow the *actual* final sibling instead. Do not move or recreate other
+  // extensions' controls, and never reorder when already adjacent.
   const anchors=['dw2-lt-settings','dw2-preset-console-settings','jd-bookshelf-settings'];
   const anchor=anchors.map(id=>document.getElementById(id))
-    .find(node=>node?.parentElement===host);
-  if(anchor){
-    if(anchor.nextElementSibling!==section)anchor.after(section);
-  }else if(section.parentElement!==host||section!==host.lastElementChild){
-    host.append(section);
-  }
+    .find(node=>node?.isConnected && node.parentElement && !section.contains(node));
+  if(anchor && anchor.nextElementSibling!==section)anchor.after(section);
 }
 async function checkAndUpdate(button){
   if(button.disabled)return;
@@ -622,9 +618,9 @@ function refreshTavern(){
     window.location.reload();
 }
 function mountSettings(){
-  const host=document.querySelector('#extensions_settings2,#extensions_settings,.extensions_settings');if(!host)return;
   let section=document.getElementById(SETTINGS_ID);
   if(section){settingsRoot=section;syncSetting();sortSettings();return}
+  const host=document.querySelector('#extensions_settings2,#extensions_settings,.extensions_settings');if(!host)return;
   section=el('div','settings inline-drawer');section.id=SETTINGS_ID;section.classList.add('inline-drawer');
   const header=el('div','settings-header inline-drawer-toggle inline-drawer-header');
   header.classList.add('inline-drawer-toggle','inline-drawer-header');

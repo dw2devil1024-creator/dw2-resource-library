@@ -20,7 +20,7 @@ body{margin:0;min-height:100vh;color:#eee9e8;font-family:'Noto Serif SC',serif;b
 <p class="notice">这是本地浏览器模拟界面。真实 TT 下拉框的可用性仍需 iPhone 实机验证。测试版默认关闭，不碰实际预设文件。</p>
 <div id="extensions_settings2"></div><div id="extensionsMenu"></div>
 </main>
-<script>window.SillyTavern={getContext:()=>window.stCtx};window.stCtx={extensionSettings:{},saveSettingsDebounced(){window.saveCount=(window.saveCount||0)+1}};window.changed=[];document.addEventListener('change',e=>{if(e.target.matches('select[data-preset-manager-for],#themes,#world_info,#world_editor_select'))window.changed.push([e.target.id,e.target.value])});</script>
+<script>window.SillyTavern={getContext:()=>window.stCtx};window.stCtx={characterId:0,characters:[{name:'演示角色',data:{extensions:{world:'京市'}}}],extensionSettings:{},saveSettingsDebounced(){window.saveCount=(window.saveCount||0)+1}};window.changed=[];document.addEventListener('change',e=>{if(e.target.matches('select[data-preset-manager-for],#themes,#world_info,#world_editor_select'))window.changed.push([e.target.id,e.target.value])});</script>
 <script type="module" src="../index.js"></script>
 <script>document.getElementById('enable').onclick=()=>window.DW2ResourceLibrary?.enable();document.getElementById('disable').onclick=()=>window.DW2ResourceLibrary?.disable();document.getElementById('open').onclick=()=>window.DW2ResourceLibrary?.open();</script>
 </body></html>

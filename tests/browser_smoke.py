@@ -49,6 +49,14 @@ with sync_playwright() as p:
     page.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='古风').click()
     page.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【古风】大周世界').click()
     assert page.locator('#world_info').evaluate('(node)=>node.options[0].selected')
+    # Character-linked lorebook is a read-only relationship, NOT global activation.
+    assert page.locator('#dw2rl-popover .dw2rl-world-bound-name').inner_text()=='京市'
+    assert '不代表全局启用' in page.locator('#dw2rl-popover .dw2rl-world-bound-note').inner_text()
+    page.locator('#dw2rl-popover .dw2rl-icon-button').click()
+    page.locator('.dw2rl-native-trigger').nth(3).click()
+    assert page.locator('#dw2rl-popover .dw2rl-world-bound-name').inner_text()=='京市'
+    assert page.locator('#dw2rl-popover .dw2rl-bound-marker').count()==1
+    assert page.locator('#world_editor_select').input_value()=='a'
     page.locator('#dw2rl-popover .dw2rl-icon-button').click()
     # Central manager: three categories, new folder, assignment and persistence.
     page.locator('#open').click()
@@ -93,6 +101,19 @@ with sync_playwright() as p:
     ice.click()
     assert page.locator('.dw2rl-manager-folder').filter(has_text='小冰块').locator('.dw2rl-manager-item').count()==0
     assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['preset:openai'].assignments.w659")
+    # World-book mode offers one-book folders only after explicit confirmation.
+    page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='世界书').click()
+    page.locator('#dw2rl-manager .dw2rl-source-picker').select_option('world:editor')
+    assert page.locator('#dw2rl-manager .dw2rl-world-bound-name').inner_text()=='京市'
+    assert page.locator('#dw2rl-manager .dw2rl-manager-folder-name').all_text_contents()==['未分类']
+    page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
+    assert '单本世界书独立成组' in page.locator('.dw2rl-dialog-message').inner_text()
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].groups.length")==0
+    page.locator('.dw2rl-confirm-dialog .dw2rl-primary-btn').click()
+    assert page.locator('#dw2rl-manager .dw2rl-manager-folder-name').all_text_contents()==['大周世界','京市','未分类']
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].groups.length")==2
+    assert page.evaluate("window.stCtx.characters[0].data.extensions.world")=='京市'
+    assert page.locator('#world_info').evaluate('(node)=>node.options[0].selected')
     page.screenshot(path='/mnt/data/DW2-Resource-Library-preview.png')
     page.locator('#dw2rl-manager .dw2rl-manager-close').click()
     page.locator('#disable').click()
@@ -141,5 +162,5 @@ with sync_playwright() as p:
     assert mobile.evaluate('window.outsideTouch===0 && window.outsideMouse===0 && window.outsidePointer===0')
     assert not touch_errors,touch_errors
     touch_context.close()
-    print('PASS | Chromium 390×844 desktop + mobile touch: grouping fold/unfold, independent unclassified bin, smart-preview, native selection, data preservation, conflict guard, TT drawer isolation; no JS exceptions')
+    print('PASS | Chromium 390×844 desktop + mobile touch: read-only current character book, worldbook singletons, grouping, native selection, saved assignments, conflict guard, TT drawer isolation; no JS exceptions')
     browser.close()

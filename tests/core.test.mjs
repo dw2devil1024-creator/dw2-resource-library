@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -86,3 +86,27 @@ const worldEditorSelect={id:'world_editor_select',options:[
 assert.equal(optionsForSelect(worldEditorSelect).length,1);
 assert.equal(optionsForSelect(worldEditorSelect)[0].value,'real');
 console.log('DW2 Resource Library: manager tree, iOS/theme grouping, version families, native editor placeholder passed');
+
+// Single-lorebook folders must be opt-in, and cannot touch a manually assigned book.
+const standaloneBooks=[
+ {value:'bound',label:'🌸方亦楷和高中生活'},
+ {value:'alone',label:'顾星灼生活'},
+ {value:'s1',label:'【古风】大周'},
+ {value:'s2',label:'【古风】皇宫'},
+ {value:'manual',label:'原本已经整理的世界书'}
+];
+const worldRecord={groups:[{id:'keep',name:'收藏'}],assignments:{manual:'keep'}};
+assert.equal(planSmartGroups(standaloneBooks,worldRecord).total,2);
+const withSolo=planSmartGroups(standaloneBooks,worldRecord,{allowSingletons:true});
+assert.equal(withSolo.total,4);
+assert.equal(withSolo.groups.find(g=>g.name==='🌸方亦楷和高中生活').values.length,1);
+assert.equal(withSolo.groups.find(g=>g.name==='顾星灼生活').values.length,1);
+assert.equal(withSolo.groups.find(g=>g.name==='古风').values.length,2);
+assert.equal(withSolo.singletons,2);
+assert.equal(applySmartGroups(worldRecord,withSolo),4);
+assert.equal(worldRecord.assignments.manual,'keep');
+assert.equal(planSmartGroups(standaloneBooks,worldRecord,{allowSingletons:true}).total,0);
+assert.equal(characterLinkedWorld({characterId:0,characters:[{data:{extensions:{world:'🌸方亦楷和高中生活'}}}]}),'🌸方亦楷和高中生活');
+assert.equal(characterLinkedWorld({characterId:null,characters:[{data:{extensions:{world:'绑定'}}}]}),'');
+assert.equal(characterLinkedWorld({characterId:1,characters:[{}]}),'');
+console.log('DW2 Resource Library: single worldbook folders, manual safety, read-only character book association passed');

@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
-/* DW2 · Resource Library | S.A. · DW2 | v0.1.1-beta.1 */
+/* DW2 · Resource Library | S.A. · DW2 | v0.1.2-beta.1 */
 /* The in-place selector respects TT's current SmartTheme tokens.
    The full manager deliberately uses DW2 Clear Mist independently. */
 select.dw2rl-native-hidden {
@@ -58,6 +58,8 @@ select.dw2rl-native-hidden {
 }
 #dw2rl-popover .dw2rl-search::placeholder{color:inherit!important;opacity:.45}
 #dw2rl-popover .dw2rl-groups{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 10px 2px;scrollbar-width:thin}
+#dw2rl-popover{touch-action:pan-y}
+#dw2rl-popover .dw2rl-groups{-webkit-overflow-scrolling:touch;touch-action:pan-y}
 #dw2rl-popover .dw2rl-group{margin:3px 0 7px;border:1px solid var(--dw2rl-theme-line);border-radius:8px;overflow:hidden}
 #dw2rl-popover .dw2rl-group-head{
   width:100%;min-height:35px;display:flex;align-items:center;gap:8px;
@@ -145,6 +147,34 @@ select.dw2rl-native-hidden {
 #dw2rl-manager .dw2rl-dialog-message{font-size:11px;line-height:1.8;color:rgba(250,245,246,.84);margin:0}
 #dw2rl-manager .dw2rl-error-text{font-size:10px;color:#ffdde1;margin:0}
 #dw2rl-manager .dw2rl-dialog-actions{display:flex;gap:8px}
+/* v0.1.2: real manager accordion, compact list and clear Unclassified bin. */
+#dw2rl-manager .dw2rl-manager-summary{
+  margin:1px 0 10px;color:rgba(232,235,239,.65);font-size:10px;line-height:1.65;
+}
+#dw2rl-manager .dw2rl-manager-groups{display:flex;flex-direction:column;gap:7px;margin:0 0 14px}
+#dw2rl-manager .dw2rl-manager-folder{
+  border:1px solid rgba(202,225,236,.19);border-radius:9px;
+  background:rgba(255,255,255,.035);overflow:hidden;
+}
+#dw2rl-manager .dw2rl-manager-folder-row{display:flex;align-items:center;gap:3px;min-height:41px;padding:3px 8px}
+#dw2rl-manager .dw2rl-manager-folder-toggle{
+  display:flex!important;align-items:center;gap:9px;flex:1 1 auto;min-width:0;
+  padding:7px 3px!important;margin:0!important;border:0!important;
+  background:transparent!important;box-shadow:none!important;text-align:left!important;
+  color:rgba(251,249,246,.94)!important;font-size:11px!important;cursor:pointer;
+}
+#dw2rl-manager .dw2rl-manager-chevron{width:13px;height:13px;flex:none;opacity:.67;transform:rotate(-90deg);transition:transform .16s ease}
+#dw2rl-manager .dw2rl-manager-folder-toggle[aria-expanded="true"] .dw2rl-manager-chevron{transform:rotate(0)}
+#dw2rl-manager .dw2rl-manager-folder-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dw2rl-manager .dw2rl-manager-folder-count{min-width:15px;color:rgba(232,235,239,.63);font-size:10px;text-align:right}
+#dw2rl-manager .dw2rl-manager-folder-actions{display:flex;align-items:center;gap:5px;flex:none}
+#dw2rl-manager .dw2rl-manager-folder-actions .dw2rl-text-btn{min-height:28px;padding:2px 4px!important;font-size:10px!important}
+#dw2rl-manager .dw2rl-manager-auto{font-size:9px;color:rgba(232,235,239,.54);white-space:nowrap}
+#dw2rl-manager .dw2rl-manager-folder-items{display:flex;flex-direction:column;gap:5px;padding:8px;border-top:1px solid rgba(202,225,236,.15)}
+#dw2rl-manager .dw2rl-manager-folder-items .dw2rl-manager-item{margin:0;background:rgba(255,255,255,.025)}
+#dw2rl-manager .dw2rl-manager-folder-items .dw2rl-empty{margin:0;padding:12px 6px}
+#dw2rl-manager .dw2rl-manager-search{margin-bottom:10px!important}
+#dw2rl-manager .dw2rl-dialog-message{max-height:35dvh;overflow-y:auto;overscroll-behavior:contain}
 /* Native settings drawer; stays with TT's styles rather than Clear Mist. */
 #dw2rl-settings .dw2rl-settings-header{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
 #dw2rl-settings .dw2rl-settings-title{display:flex;flex-direction:column;gap:2px}

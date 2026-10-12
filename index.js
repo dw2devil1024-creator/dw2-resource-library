@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.1-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.2-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, optionsForSelect, planSmartGroups, applySmartGroups
+  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, planSmartGroups, applySmartGroups
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_info, select#world_editor_select';
@@ -19,6 +19,8 @@ let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
+const managerExpanded=new Set();
+let managerInitializedSource='';
 const listeners=[];
 
 const el=(tag,cls='',text)=>{
@@ -198,8 +200,10 @@ function openPopover(select){
   // The popover is portalled to body to avoid clipped TT drawers. Prevent
   // its clicks/touches from reaching native outside-of-drawer closers.
   // Do not preventDefault: retain iOS scrolling, text input and native taps.
-  for(const type of ['pointerdown','pointerup','click','touchstart','touchend']){
-    popover.addEventListener(type,event=>event.stopPropagation());
+  for(const type of ['touchstart','touchmove','touchend','touchcancel',
+    'pointerdown','pointermove','pointerup','pointercancel',
+    'mousedown','mousemove','mouseup','wheel','click']){
+    popover.addEventListener(type,event=>event.stopPropagation(),{passive:true});
   }
   document.body.append(popover);
   drawPopover(adapter);positionPopover(adapter.trigger);
@@ -245,7 +249,11 @@ function drawPopover(adapter){
     const glyph=icon('down');glyph.classList.add('dw2rl-group-chevron');
     header.append(glyph,el('span','group-name',group.name),el('small','group-count',String(items.length)));
     header.setAttribute('aria-expanded',String(expanded));
-    header.addEventListener('click',()=>{openedGroup=expanded?'__none__':group.key;drawPopover(adapter)});
+    header.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      openedGroup=expanded?'__none__':group.key;
+      drawPopover(adapter);
+    });
     card.append(header);
     if(expanded){
       const entries=el('div','group-items');
@@ -274,7 +282,7 @@ function availableSource(){
   if(current && adapters.has(current) && adapters.get(current).source.category===category)return adapters.get(current);
   const first=sourcesFor(category)[0];managedSourceId=first?.source.id||'';return first;
 }
-function closeManager(){manager?.remove();manager=null;managerQuery='';}
+function closeManager(){manager?.remove();manager=null;managerQuery='';managerInitializedSource='';managerExpanded.clear();}
 function overlayPrompt(title,initial,onSave,opts={}){
   if(!manager)return;
   const backdrop=el('div','dialog-backdrop');
@@ -330,7 +338,7 @@ function smartOrganize(adapter){
   const record=ensureResource(state,adapter.source.id);
   const proposal=planSmartGroups(sourceOptions(adapter),record);
   if(!proposal.groups.length){
-    notify('暂时没有找到足够明确的同系列名称。你仍可以手动新建分类。','info');return;
+    notify('暂时没有足够明确的同系列资源。为避免误分类，请在「未分类」中手动整理。','info');return;
   }
   const summary=proposal.groups.map(g=>g.name+'（'+g.values.length+'）').join('、');
   overlayPrompt('智能整理预览','',()=>{
@@ -342,7 +350,7 @@ function smartOrganize(adapter){
     if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
     notify('已整理 '+safePlan.total+' 项分类记录；原始资源未修改。','success');
     return true;
-  },{confirmOnly:true,message:'将把有明确名称前缀、同系列版本的 '+proposal.total+' 个资源归入 '+proposal.groups.length+' 个分类：'+summary+'。已手动分类的资源保持不变；不改动预设、世界书、美化文件。'});
+  },{confirmOnly:true,message:'识别到 '+proposal.groups.length+' 个明确系列，共 '+proposal.total+' 项：'+summary+'。另外 '+proposal.remaining+' 项仍待分类，可在「未分类」中手动整理。已分类的资源保持不变；不修改原始文件。'});
 }
 function exportGroups(){
   const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,version:VERSION,exportedAt:new Date().toISOString()};
@@ -373,7 +381,7 @@ function renderManager(){
   top.append(title,close);modal.append(top);
   const tabs=el('div','category-tabs');
   for(const cat of CATEGORIES){
-    const tab=button(cat.label,'category-tab'+(category===cat.id?' is-active':''),()=>{category=cat.id;managedSourceId='';managerQuery='';renderManager()});
+    const tab=button(cat.label,'category-tab'+(category===cat.id?' is-active':''),()=>{category=cat.id;managedSourceId='';managerQuery='';managerInitializedSource='';renderManager()});
     tab.setAttribute('aria-pressed',String(category===cat.id));tabs.append(tab);
   }
   modal.append(tabs);
@@ -392,48 +400,95 @@ function renderManager(){
   if(candidates.length>1){
     const picker=el('select','source-picker');picker.setAttribute('aria-label','选择资源来源');
     for(const source of candidates){const opt=document.createElement('option');opt.value=source.source.id;opt.textContent=source.source.label;opt.selected=source.source.id===managedSourceId;picker.append(opt)}
-    picker.addEventListener('change',()=>{managedSourceId=picker.value;managerQuery='';renderManager()});sourceHeading.append(picker);
+    picker.addEventListener('change',()=>{managedSourceId=picker.value;managerQuery='';managerInitializedSource='';renderManager()});sourceHeading.append(picker);
   }
   content.append(sourceHeading);
   const controls=el('div','manager-actions');
   controls.append(button('＋ 新建分类','primary-btn',()=>makeGroup(adapter)),button('智能整理','soft-btn',()=>smartOrganize(adapter)),button('导出备份','soft-btn',exportGroups));
   content.append(controls);
   const record=ensureResource(state,adapter.source.id);
-  if(record.groups.length){
-    const groups=el('div','manager-groups');
-    for(const group of record.groups){
-      const row=el('div','manager-group');
-      const associated=Object.values(record.assignments).filter(id=>id===group.id).length;
-      row.append(icon('folder'),el('span','group-text',group.name),el('small','group-count',String(associated)));
-      row.append(button('改名','text-btn',()=>renameGroup(adapter,group)),button('删除分类','text-btn',()=>removeGroup(adapter,group)));
-      groups.append(row);
-    }
-    content.append(groups);
-  }
   const options=sourceOptions(adapter);
-  const search=el('input','manager-search');search.type='search';search.placeholder='搜索资源名称…';search.value=managerQuery;search.autocomplete='off';
-  search.addEventListener('input',()=>{managerQuery=search.value;drawItemRows(list,adapter,record,options)});
-  content.append(search);
-  const list=el('div','manager-items');
-  content.append(list);drawItemRows(list,adapter,record,options);
+  const search=el('input','manager-search');search.type='search';
+  search.placeholder='搜索资源或文件夹…';search.value=managerQuery;search.autocomplete='off';
+  const groups=el('div','manager-groups');
+  if(managerInitializedSource!==adapter.source.id){
+    managerInitializedSource=adapter.source.id;
+    managerExpanded.clear();managerExpanded.add('loose');
+  }
+  search.addEventListener('input',()=>{managerQuery=search.value;drawManagerGroups(groups,adapter,record,options)});
+  content.append(groups,search);
+  drawManagerGroups(groups,adapter,record,options);
   content.append(el('p','manager-note','分类信息独立保存，不修改或删除原始预设、世界书和美化文件。'));
   modal.append(content);manager.append(modal);
 }
-function drawItemRows(list,adapter,record,items){
+function drawManagerGroups(list,adapter,record,options){
+  const buckets=managerGroups(options,record,state.autoGroup);
+  const needle=managerQuery.trim().toLocaleLowerCase();
+  const previousScroll=list.parentElement?.scrollTop||0;
   list.replaceChildren();
-  const filtered=items.filter(x=>x.label.toLocaleLowerCase().includes(managerQuery.trim().toLocaleLowerCase()));
-  if(!filtered.length){list.append(el('p','empty',items.length?'没有找到匹配资源':'当前资源列表为空'));return}
-  for(const item of filtered){
-    const row=el('div','manager-item');
-    const name=el('span','item-label',item.label);
-    const placement=el('select','assign');placement.setAttribute('aria-label','为 '+item.label+' 选择分类');
-    for(const group of [{id:'',name:'自动／未分组'},...record.groups]){
-      const option=document.createElement('option');option.value=group.id;option.textContent=group.name;
-      option.selected=(record.assignments[item.value]||'')===group.id;placement.append(option);
+  const unfiled=buckets.find(group=>group.key==='loose');
+  const total=buckets.reduce((n,group)=>n+group.items.length,0);
+  const heading=el('div','manager-summary',
+    '共 '+total+' 项 · 未分类 '+(unfiled?.items.length||0)+' 项 · 点文件夹展开查看');
+  list.append(heading);
+  let visible=0;
+  for(const group of buckets){
+    const matchedName=group.name.toLocaleLowerCase().includes(needle);
+    const matchedItems=needle && !matchedName
+      ? group.items.filter(item=>item.label.toLocaleLowerCase().includes(needle))
+      : group.items;
+    if(needle&&!matchedName&&!matchedItems.length)continue;
+    visible++;
+    const card=el('section','manager-folder');
+    card.dataset.group=group.key;
+    const head=button('','manager-folder-toggle');head.dataset.group=group.key;
+    const expanded=!!needle||managerExpanded.has(group.key);
+    const arrow=icon('down');arrow.classList.add('dw2rl-manager-chevron');
+    head.append(arrow,el('span','manager-folder-name',group.name),
+      el('small','manager-folder-count',String(group.items.length)));
+    head.setAttribute('aria-expanded',String(expanded));
+    head.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      if(managerExpanded.has(group.key))managerExpanded.delete(group.key);
+      else managerExpanded.add(group.key);
+      drawManagerGroups(list,adapter,record,options);
+    });
+    const actions=el('div','manager-folder-actions');
+    if(group.kind==='manual'){
+      const origin=record.groups.find(x=>'manual:'+x.id===group.key);
+      if(origin){
+        actions.append(button('改名','text-btn',()=>renameGroup(adapter,origin)),
+          button('删除分类','text-btn',()=>removeGroup(adapter,origin)));
+      }
+    }else if(group.kind==='auto')actions.append(el('small','manager-auto','自动识别'));
+    else actions.append(el('small','manager-auto','待整理'));
+    const row=el('div','manager-folder-row');row.append(head,actions);card.append(row);
+    if(expanded){
+      const container=el('div','manager-folder-items');
+      if(!matchedItems.length){container.append(el('p','empty','这个文件夹目前没有资源'));}
+      else for(const item of matchedItems){
+        const row=el('div','manager-item');
+        const name=el('span','item-label',item.label);
+        const placement=el('select','assign');
+        placement.setAttribute('aria-label','为 '+item.label+' 选择分类');
+        for(const candidate of [{id:'',name:'自动／未分类'},...record.groups]){
+          const option=document.createElement('option');option.value=candidate.id;
+          option.textContent=candidate.name;
+          option.selected=(record.assignments[item.value]||'')===candidate.id;
+          placement.append(option);
+        }
+        placement.addEventListener('change',()=>{
+          assign(adapter,item,placement.value);
+          drawManagerGroups(list,adapter,record,options);
+        });
+        row.append(name,placement);container.append(row);
+      }
+      card.append(container);
     }
-    placement.addEventListener('change',()=>assign(adapter,item,placement.value));
-    row.append(name,placement);list.append(row);
+    list.append(card);
   }
+  if(!visible)list.append(el('p','empty','没有匹配的资源或分类'));
+  if(list.parentElement)list.parentElement.scrollTop=previousScroll;
 }
 function mountMenu(){
   const parent=document.getElementById('extensionsMenu');

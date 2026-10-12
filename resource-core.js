@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.8-beta.1';
+export const VERSION = '0.1.9-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -31,12 +31,13 @@ export function sourceFromSelect(select) {
   const identifier = normalizedPresetKey(raw);
   return { id:'preset:'+identifier, category:'preset', label:PRESET_LABELS[identifier] || '预设 · '+String(raw).trim() };
 }
-export function createEmptyState() { return { schemaVersion:2,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{} }; }
+export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},legacyWorldMergeDone:false }; }
 export function normalizeState(input) {
   const state=createEmptyState();
   if (!input || typeof input!=='object') return state;
   state.enabled=input.enabled===true;
   state.autoGroup=input.autoGroup!==false;
+  state.legacyWorldMergeDone=input.legacyWorldMergeDone===true;
   if (input.resources && typeof input.resources==='object' && !Array.isArray(input.resources)) {
     for (const [id, raw] of Object.entries(input.resources).slice(0,100)) {
       if (!raw || typeof raw!=='object' || !/^([a-z]+(?::[a-z0-9]+)?)$/.test(id)) continue;
@@ -53,7 +54,13 @@ export function normalizeState(input) {
           if(typeof groupId==='string' && groups.some(g=>g.id===groupId))assignments[value.slice(0,512)]=groupId;
         }
       }
-      state.resources[id]={groups,assignments};
+      const suppressedAutoGroups=[...new Set(
+        (Array.isArray(raw.suppressedAutoGroups)?raw.suppressedAutoGroups:[])
+          .filter(name=>typeof name==='string')
+          .map(name=>name.trim().slice(0,36))
+          .filter(Boolean)
+      )].slice(0,200);
+      state.resources[id]={groups,assignments,suppressedAutoGroups};
     }
   }
   const backups=input.worldMigrationBackup;
@@ -70,8 +77,43 @@ export function normalizeState(input) {
   return state;
 }
 export function ensureResource(state, sourceId){
-  if(!state.resources[sourceId])state.resources[sourceId]={groups:[],assignments:{}};
-  return state.resources[sourceId];
+  if(!state.resources[sourceId])state.resources[sourceId]={groups:[],assignments:{},suppressedAutoGroups:[]};
+  const record=state.resources[sourceId];
+  if(!Array.isArray(record.suppressedAutoGroups))record.suppressedAutoGroups=[];
+  return record;
+}
+/** The old global world-book settings are retired. Migrating them on every
+ * launch resurrected folders the user had explicitly deleted. Never merge
+ * when the editor resource already exists, even if all its folders are gone.
+ * A legacy-only install can be copied ONCE without touching its old backup. */
+export function migrateLegacyWorldFolders(state){
+  if(state.legacyWorldMergeDone===true)return false;
+  const global=state.resources?.['world:global'];
+  const hasEditor=Object.hasOwn(state.resources||{},'world:editor');
+  if(!hasEditor && global && Array.isArray(global.groups)){
+    state.resources['world:editor']={
+      groups:global.groups.map(group=>({...group})),
+      assignments:{...(global.assignments||{})},
+      suppressedAutoGroups:[...(global.suppressedAutoGroups||[])],
+    };
+  }
+  state.legacyWorldMergeDone=true;
+  return true;
+}
+/** User-suppressed auto folder names survive normalization and restarts.
+ * Without tombstones, a deleted manual [name] folder is immediately
+ * recreated by the automatic inferred grouping of the same books. */
+export function suppressAutoGroup(record,name){
+  const title=String(name||'').trim();
+  if(!title)return;
+  if(!Array.isArray(record.suppressedAutoGroups))record.suppressedAutoGroups=[];
+  if(!record.suppressedAutoGroups.includes(title))record.suppressedAutoGroups.push(title);
+}
+export function unsuppressAutoGroup(record,name){
+  const title=String(name||'').trim();
+  if(Array.isArray(record.suppressedAutoGroups)){
+    record.suppressedAutoGroups=record.suppressedAutoGroups.filter(value=>value!==title);
+  }
 }
 /** Native TT uses a mutable index to select a world book. Grouping keys
  * must instead use its file name, without changing the native selection. */
@@ -152,8 +194,12 @@ export function groupOptions(options,resource,autoGroup=true){
     const target=manual.get(resource?.assignments?.[assignmentKey(option)]);
     if(target)target.items.push(option);else remaining.push(option);
   }
+  const suppressed=new Set(resource?.suppressedAutoGroups||[]);
   const autoCounts=new Map();
-  if(autoGroup)for(const option of remaining){const inferred=guessGroup(option.label);if(inferred)autoCounts.set(inferred,(autoCounts.get(inferred)||0)+1)}
+  if(autoGroup)for(const option of remaining){
+    const inferred=guessGroup(option.label);
+    if(inferred&&!suppressed.has(inferred))autoCounts.set(inferred,(autoCounts.get(inferred)||0)+1);
+  }
   const auto=new Map(),unassigned=[];
   const manualByName=new Map([...manual.values()].map(group=>[group.name,group]));
   for(const option of remaining){
@@ -161,7 +207,7 @@ export function groupOptions(options,resource,autoGroup=true){
     if(name && manualByName.has(name)){
       // One visible folder per name. Explicit placement keeps first priority.
       manualByName.get(name).items.push(option);
-    }else if(name && autoCounts.get(name)>=2){
+    }else if(name && !suppressed.has(name) && autoCounts.get(name)>=2){
       if(!auto.has(name))auto.set(name,{key:'auto:'+name,name,items:[],kind:'auto'});
       auto.get(name).items.push(option);
     }else unassigned.push(option);
@@ -237,12 +283,13 @@ export function suggestedSeries(label){
 }
 export function planSmartGroups(options,resource,{allowSingletons=false}={}){
   const assigned=resource?.assignments||{};
+  const suppressed=new Set(resource?.suppressedAutoGroups||[]);
   const byName=new Map();
   const evidenceFor=new Set();
   for(const option of options){
     if(Object.hasOwn(assigned,assignmentKey(option)))continue;
     const name=suggestedSeries(option.label);
-    if(!name)continue;
+    if(!name||suppressed.has(name))continue;
     evidenceFor.add(name);
     if(!byName.has(name))byName.set(name,new Set());
     byName.get(name).add(assignmentKey(option));
@@ -264,20 +311,21 @@ export function planSmartGroups(options,resource,{allowSingletons=false}={}){
     for(const item of options){
       if(Object.hasOwn(assigned,assignmentKey(item))||included.has(assignmentKey(item)))continue;
       const name=suggestedSeries(item.label)||String(item.label||'').trim();
-      if(!name)continue;
+      if(!name||suppressed.has(name))continue;
       let folder=named.get(name);
       if(!folder){folder={name,values:[]};groups.push(folder);named.set(name,folder)}
       folder.values.push(assignmentKey(item));
       included.add(assignmentKey(item));
     }
   }
-  return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,o.value)&&!included.has(o.value)).length,
+  return {groups,total:included.size,remaining:options.filter(o=>!Object.hasOwn(assigned,assignmentKey(o))&&!included.has(assignmentKey(o))).length,
     singletons:groups.filter(g=>g.values.length===1).length};
 }
 export function applySmartGroups(resource,plan){
   let added=0;
   const manual=new Map(resource.groups.map(g=>[g.name,g.id]));
   for(const group of plan.groups){
+    if(resource.suppressedAutoGroups?.includes(group.name))continue;
     let id=manual.get(group.name);
     if(!id){
       id='sg'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);

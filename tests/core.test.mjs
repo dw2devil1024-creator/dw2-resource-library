@@ -110,3 +110,21 @@ assert.equal(characterLinkedWorld({characterId:0,characters:[{data:{extensions:{
 assert.equal(characterLinkedWorld({characterId:null,characters:[{data:{extensions:{world:'绑定'}}}]}),'');
 assert.equal(characterLinkedWorld({characterId:1,characters:[{}]}),'');
 console.log('DW2 Resource Library: single worldbook folders, manual safety, read-only character book association passed');
+
+// All three categories may explicitly opt into singleton folders, preserving existing hand-made assignments.
+const triple=[
+ {value:'preset-one',label:'普通预设甲'},{value:'preset-two',label:'普通预设乙'},
+ {value:'preset-three',label:'【小冰块】小说版'},{value:'preset-four',label:'【小冰块】沉浸版'}
+];
+const safe={groups:[{id:'kept',name:'收藏'}],assignments:{'preset-two':'kept'}};
+const onlySeries=planSmartGroups(triple,safe);
+assert.equal(onlySeries.total,2);
+const allSingle=planSmartGroups(triple,safe,{allowSingletons:true});
+assert.equal(allSingle.total,3);
+assert.equal(allSingle.singletons,1);
+assert.equal(allSingle.groups.find(x=>x.name==='普通预设甲').values.length,1);
+assert.equal(applySmartGroups(safe,allSingle),3);
+assert.equal(safe.assignments['preset-two'],'kept');
+const soloThemes=planSmartGroups([{value:'puppy',label:'Puppy'}],{groups:[],assignments:{}},{allowSingletons:true});
+assert.deepEqual(soloThemes.groups.map(x=>x.name),['Puppy']);
+console.log('DW2 Resource Library: presets, world books, themes support confirmed singleton opt-in');

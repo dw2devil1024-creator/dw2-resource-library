@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.8-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.9-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, planSmartGroups, applySmartGroups, characterLinkedWorld
+  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
@@ -54,27 +54,11 @@ function loadData(){
     try{state=normalizeState(JSON.parse(localStorage.getItem(STORE_KEY)||'null'))}catch{state=createEmptyState()}
   }
 }
-// Both TT world-book selectors list the same files. Merge older independent
-// global folder labels into editor folders, while keeping the old record.
+// The retired world:global source is kept as an archive, not an active
+// source of folders. Only migrate legacy-only installs once, and never merge
+// again after an editor folder has been deleted.
 function mergeWorldBookFolders(){
-  const source=state.resources['world:global'];
-  if(!source || (!source.groups?.length && !Object.keys(source.assignments||{}).length))return;
-  const target=ensureResource(state,'world:editor');
-  const mapping=new Map();let changed=false;
-  for(const folder of source.groups||[]){
-    let dest=target.groups.find(g=>g.name===folder.name);
-    if(!dest){
-      let id=folder.id;
-      if(target.groups.some(g=>g.id===id))id='wg'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-      dest={id,name:folder.name};target.groups.push(dest);changed=true;
-    }
-    mapping.set(folder.id,dest.id);
-  }
-  for(const [value,groupId] of Object.entries(source.assignments||{})){
-    const mapped=mapping.get(groupId);
-    if(mapped && !Object.hasOwn(target.assignments,value)){target.assignments[value]=mapped;changed=true}
-  }
-  if(changed)saveData();
+  if(migrateLegacyWorldFolders(state))saveData();
 }
 let warnedAboutLegacyWorlds=false;
 function synchronizeWorldAssignments(select){
@@ -377,6 +361,7 @@ function makeGroup(adapter){
     const record=folderRecord(adapter);
     if(record.groups.some(g=>g.name===name))return false;
     record.groups.push({id:'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),name});
+    unsuppressAutoGroup(record,name);
     saveData();return true;
   });
 }
@@ -385,15 +370,23 @@ function renameGroup(adapter,group){
     const record=folderRecord(adapter);
     if(record.groups.some(g=>g.id!==group.id&&g.name===name))return false;
     const target=record.groups.find(g=>g.id===group.id);if(!target)return false;
-    target.name=name;saveData();return true;
+    const previousName=target.name;
+    target.name=name;
+    if(previousName!==name)suppressAutoGroup(record,previousName);
+    unsuppressAutoGroup(record,name);
+    saveData();return true;
   });
 }
 function removeGroup(adapter,group){
   overlayPrompt('删除这个分类？','',()=>{
     const record=folderRecord(adapter);
+    if(!record.groups.some(g=>g.id===group.id))return false;
     record.groups=record.groups.filter(g=>g.id!==group.id);
     for(const [value,id] of Object.entries(record.assignments))if(id===group.id)delete record.assignments[value];
-    saveData();return true;
+    suppressAutoGroup(record,group.name);
+    saveData();
+    if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
+    return true;
   },{confirmOnly:true,danger:true,message:'只删除文件夹分类，里面的预设、世界书或美化不会被删除。'});
 }
 function assign(adapter,item,groupId){

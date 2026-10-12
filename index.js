@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.4-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.4-beta.2 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -224,11 +224,22 @@ function renderGlobalFolders(adapter){
 }
 
 function connect(select,source){
+  // On iOS / TT mobile, global worlds may be a plain native <select multiple>
+  // instead of Select2. In that case replace the selector IN PLACE with the
+  // existing grouped multi-select popover, never append a duplicate control.
+  const nativeGlobal=source.id==='world:global'
+    &&findCompanion(select).some(node=>node.matches('.select2-container'));
   const known=adapters.get(select);
-  if(known){refreshTrigger(known);return}
+  if(known){
+    if(source.id==='world:global' && !!known.globalNative!==nativeGlobal){
+      // TT can initialize/destroy Select2 after the extension has mounted.
+      cleanupAdapter(known);adapters.delete(select);
+      if(sourceMap.get(source.id)===select)sourceMap.delete(source.id);
+    }else{refreshTrigger(known);return}
+  }
   const selected=sourceMap.get(source.id);
   if(selected && selected!==select){const previous=adapters.get(selected);if(previous){cleanupAdapter(previous);adapters.delete(selected)}}
-  if(source.id==='world:global'){connectGlobalWorld(select,source);return}
+  if(nativeGlobal){connectGlobalWorld(select,source);return}
   const trigger=button('','native-trigger',()=>openPopover(select));
   const title=el('span','native-value','');
   const arrow=icon('down');arrow.classList.add('dw2rl-chevron');
@@ -706,18 +717,27 @@ function onViewportChange(){
   positionPopover(adapter.trigger);
 }
 function onDOMChange(records){
-  let shouldMount=false,shouldScan=false;
+  let shouldMount=false,shouldScan=false,shouldRefreshGlobal=false;
   for(const record of records){
-    for(const node of [...record.addedNodes]){
+    for(const node of record.addedNodes){
       if(node.nodeType!==1)continue;
       // Body chat updates are ignored; only resource selectors/settings/menus trigger a scan.
       if(node.matches?.(SELECTORS) || node.querySelector?.(SELECTORS))shouldScan=true;
+      if(node.matches?.('.select2-container') || node.querySelector?.('.select2-container'))shouldScan=true;
+      if(node.matches?.('#select2-world_info-results') || node.querySelector?.('#select2-world_info-results'))shouldRefreshGlobal=true;
       if(node.matches?.('#srg-root,#srg-settings,.srg-select-shell') || node.querySelector?.('#srg-root,#srg-settings,.srg-select-shell'))shouldScan=true;
       if(node.id==='extensionsMenu'||node.id==='extensions_settings2'||node.id==='extensions_settings'||node.querySelector?.('#extensionsMenu,#extensions_settings2,#extensions_settings'))shouldMount=true;
     }
-    if(shouldMount&&shouldScan)break;
+    for(const node of record.removedNodes){
+      if(node.nodeType===1 && (node.matches?.('.select2-container,#world_info')||node.querySelector?.('.select2-container,#world_info')))shouldScan=true;
+    }
   }
   if(shouldScan)scheduleScan();
+  // Recover when TT opens the Select2 dropdown without relaying select2:open.
+  if(shouldRefreshGlobal)requestAnimationFrame(()=>{
+    const active=adapters.get(sourceMap.get('world:global'));
+    if(active?.globalNative)renderGlobalFolders(active);
+  });
   if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings();}});
 }
 function start(){

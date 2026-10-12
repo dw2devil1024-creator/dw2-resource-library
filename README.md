@@ -1,7 +1,7 @@
 # DW2 · Resource Library（资源分类）
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.7-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.7-beta.2｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 
@@ -11,6 +11,12 @@
 - **总面板独立**：通过魔法棒「资源分类」或扩展设置「打开资源整理」进入独立的 Private Atelier 暖灰棕玻璃管理面板。
 - **全中文、轻量**：主入口只展示「预设 / 世界书 / 美化」三类；少量跨 API 的具体预设类型在选择来源时用中文解释。
 - **只保存分类**：自定义分类、分类分配记录保存在酒馆当前用户的 `extensionSettings.dw2ResourceLibrary` 中。资源选择仍委托 TT 原生 `<select>` 的 `change` 事件。
+
+## v0.1.7-beta.2 · 扩展设置字体与按钮统一
+
+- 参考 DW2 · Preset Console、Story Archive 和 Little Things 的实际扩展设置样式，统一资源库设置区的 Noto Serif SC 中文与 Playfair Display 英文署名，校准标题字重、版本小字、勾选项及辅助说明的字号、行距与留白。
+- 四个功能按钮「打开资源整理 / 重新识别 / 检查并更新 / 刷新酒馆」同排四列，移动端保持整齐不换行；用弹性字号避免窄屏溢出，边线、圆角及按钮高度参考 Preset Console。
+- 仅修改 Resource Library 的原生扩展设置区样式。资源分类总控面板的暖灰棕玻璃、分类功能、数据和其余三个 DW2 仓库不变。
 
 ## v0.1.7-beta.1 · Private Atelier 暖灰棕分层玻璃
 

@@ -18,30 +18,8 @@ with sync_playwright() as p:
     errors=[]
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.set_content(html)
-    # Mock only Select2 lifecycle and dropdown DOM. Actual TT host testing is separate.
-    page.add_script_tag(content="""
-    // Desktop-like TT: a persistent Select2 companion sits beside the select.
-    document.querySelector('#world_info').insertAdjacentHTML('afterend','<span id="mock-select2-shell" class="select2-container"></span>');
-    window.jQuery=window.$=node=>{
-      const regs=[];
-      return {on(events,handler){events.split(' ').forEach(name=>{
-        const actual=name.split('.')[0];
-        node.addEventListener(actual,handler);regs.push([actual,handler]);
-      });return this},off(){regs.forEach(([name,fn])=>node.removeEventListener(name,fn));return this}};
-    };
-    window.openGlobalWorlds=()=>{
-      document.querySelector('#mock-select2')?.remove();
-      const node=document.createElement('div');node.id='mock-select2';
-      node.className='select2-container select2-container--open';
-      node.innerHTML='<div class="select2-dropdown" style="background:#3b383a;color:white;position:relative;padding:7px"><div class="select2-search"><input class="select2-search__field" placeholder="搜索世界书"></div><div class="select2-results"><ul id="select2-world_info-results"><li>原生未分组结果（被临时隐藏）</li></ul></div></div>';
-      document.querySelector('#world_info').parentElement.append(node);
-      document.querySelector('#world_info').dispatchEvent(new Event('select2:open'));
-    };
-    window.closeGlobalWorlds=()=>{
-      document.querySelector('#world_info').dispatchEvent(new Event('select2:close'));
-      document.querySelector('#mock-select2')?.remove();
-    };
-    """)
+    # All DW2 group controls are mounted independently of TT's global
+    # world-book multi-select. No Select2 mocking is needed.
     page.add_script_tag(content=core+'\n'+app)
     assert page.evaluate('typeof DW2ResourceLibrary')=='object'
     assert page.locator('select.dw2rl-native-hidden').count()==0
@@ -68,20 +46,11 @@ with sync_playwright() as p:
     page.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【小冰块】小说').click()
     assert page.locator('#mock-presets').input_value()=='ice2'
     assert page.evaluate('window.changed.at(-1)[1]')=='ice2'
-    # TT global selector stays native Select2. No duplicated world trigger.
+    # The global multi-select is never decorated or hidden by Resource Library.
     assert page.locator('#world_info').evaluate('(n)=>!n.classList.contains("dw2rl-native-hidden")')
-    page.evaluate('window.openGlobalWorlds()');page.wait_for_timeout(110)
-    assert page.locator('#dw2rl-global-groups').is_visible()
-    assert page.locator('#select2-world_info-results').is_hidden()
-    assert page.locator('#dw2rl-global-groups .dw2rl-global-group-name').all_text_contents()==['古风','现代']
-    page.locator('#dw2rl-global-groups .dw2rl-global-group-head').filter(has_text='古风').click()
-    page.locator('#dw2rl-global-groups .dw2rl-global-entry').filter(has_text='【古风】大周世界').click()
-    assert page.locator('#world_info').evaluate('(node)=>node.options[0].selected')
-    assert page.locator('#dw2rl-global-groups').is_visible()
-    page.locator('#mock-select2 .select2-search__field').fill('校园')
-    assert page.locator('#dw2rl-global-groups .dw2rl-global-entry-label').all_text_contents()==['【现代】校园']
-    page.evaluate('window.closeGlobalWorlds()')
     assert page.locator('#dw2rl-global-groups').count()==0
+    assert page.locator('.dw2rl-native-trigger').count()==3
+    assert page.locator('#world_info').evaluate('(n)=>n.multiple && n.options.length==4')
     # World editor still has the read-only character association.
     page.locator('.dw2rl-native-trigger').nth(2).click()
     assert page.locator('#dw2rl-popover .dw2rl-world-bound-name').inner_text()=='京市'
@@ -146,10 +115,10 @@ with sync_playwright() as p:
     assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].groups.length")==2
     assert page.evaluate("window.stCtx.characters[0].data.extensions.world")=='京市'
     assert page.locator('#world_info').evaluate('(node)=>node.options[0].selected')
-    # The global Select2 folder list reuses the saved editor folders.
-    page.evaluate('window.openGlobalWorlds()');page.wait_for_timeout(100)
-    assert page.locator('#dw2rl-global-groups .dw2rl-global-group-name').count()>=2
-    page.evaluate('window.closeGlobalWorlds()')
+    # Editor folders survive; they never alter TT's global world selector.
+    assert page.locator('#dw2rl-global-groups').count()==0
+    assert page.locator('#world_info').evaluate('(n)=>!n.classList.contains("dw2rl-native-hidden")')
+    assert page.evaluate("window.stCtx.extensionSettings.dw2ResourceLibrary.resources['world:editor'].groups.length")==2
     # Themes/presets offer safe, confirm-only singleton grouping choices.
     page.locator('#dw2rl-manager .dw2rl-category-tab').filter(has_text='美化').click()
     page.locator('#dw2rl-manager .dw2rl-manager-actions button').filter(has_text='智能整理').click()
@@ -207,21 +176,14 @@ with sync_playwright() as p:
     mobile.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【小冰块】小说').tap()
     assert mobile.locator('#mock-presets').input_value()=='ice2'
     assert mobile.evaluate('window.outsideTouch===0 && window.outsideMouse===0 && window.outsidePointer===0')
-    # Mobile TT often has no Select2 companion. The original global slot must
-    # become an in-place grouped multi-select, never a second standalone button.
-    assert mobile.locator('.dw2rl-native-trigger').count()==4
-    assert mobile.locator('#world_info').evaluate('(node)=>node.classList.contains("dw2rl-native-hidden")')
-    mobile.locator('.dw2rl-native-trigger').nth(2).tap()
-    assert mobile.locator('#dw2rl-popover .dw2rl-group-name').all_text_contents()==['古风','现代']
-    mobile.locator('#dw2rl-popover .dw2rl-group-head').filter(has_text='古风').tap()
-    mobile.locator('#dw2rl-popover .dw2rl-option').filter(has_text='【古风】大周世界').tap()
-    assert mobile.locator('#world_info').evaluate('(node)=>node.options[0].selected')
-    assert mobile.locator('#dw2rl-popover').is_visible()
-    mobile.locator('#dw2rl-popover .dw2rl-icon-button').tap()
+    # Mobile: global world books remain TT-native regardless of Select2.
+    assert mobile.locator('.dw2rl-native-trigger').count()==3
+    assert mobile.locator('#world_info').evaluate('(node)=>!node.classList.contains("dw2rl-native-hidden")')
+    assert mobile.locator('#dw2rl-global-groups').count()==0
     mobile.locator('#disable').tap()
     assert mobile.locator('#world_info').evaluate('(node)=>!node.classList.contains("dw2rl-native-hidden")')
     assert mobile.locator('.dw2rl-native-trigger').count()==0
     assert not touch_errors,touch_errors
     touch_context.close()
-    print('PASS | Chromium 390×844: native Select2 + mobile non-Select2 global grouping, no duplicate button, shared folders, multi-select and restoration')
+    print('PASS | Chromium 390×844: TT native global-world selector retained, DW2 folders, iOS touch and restoration')
     browser.close()

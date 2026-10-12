@@ -113,7 +113,7 @@ with sync_playwright() as p:
       const style=getComputedStyle(el);
       return {background:style.backgroundImage,backdrop:style.backdropFilter||style.webkitBackdropFilter};
     }""")
-    tint=re.findall(r'rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([0-9.]+)\\)',glass['background'])
+    tint=re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)',glass['background'])
     assert len(tint)>=2 and max(float(alpha) for _,_,_,alpha in tint)<.80,glass
     assert all(int(red)>=int(blue) for red,green,blue,alpha in tint),glass
     assert 'blur(30px)' in glass['backdrop'],glass

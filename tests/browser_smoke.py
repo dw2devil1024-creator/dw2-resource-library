@@ -31,6 +31,22 @@ with sync_playwright() as p:
     assert page.locator('#dw2rl-settings .dw2rl-settings-actions button').all_text_contents()==[
       '打开资源整理','重新识别','检查并更新','刷新酒馆'
     ]
+    # Settings typography and four side-by-side actions match other DW2 drawers.
+    layout=page.locator('#dw2rl-settings').evaluate("""root=>{
+      const actions=root.querySelector('.dw2rl-settings-actions');
+      const buttons=[...actions.children];
+      const title=root.querySelector('.dw2rl-settings-title>b');
+      const byline=root.querySelector('.dw2rl-settings-title>small');
+      const style=getComputedStyle(actions);
+      const rects=buttons.map(b=>b.getBoundingClientRect());
+      return {columns:style.gridTemplateColumns.split(' ').length,
+        tops:rects.map(r=>Math.round(r.top)),
+        widths:rects.map(r=>r.width),heading:getComputedStyle(title).fontFamily,
+        byline:getComputedStyle(byline).fontFamily};
+    }""")
+    assert layout['columns']==4 and len(set(layout['tops']))==1,layout
+    assert min(layout['widths'])>50,layout
+    assert 'Noto Serif SC' in layout['heading'] and 'Playfair Display' in layout['byline'],layout
     page.evaluate("""() => {
       const host=document.getElementById('extensions_settings2');
       const shelf=document.createElement('div');shelf.id='jd-bookshelf-settings';

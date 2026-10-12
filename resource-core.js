@@ -101,7 +101,9 @@ export function migrateWorldAssignments(state,options){
       byGroup.get(groupId).push(oldValue);
     }
     const anchors=new Map();
-    let shifted=false;
+    // If an old index no longer exists, the file list definitely changed.
+    // Do not infer the remaining index identities from a truncated list.
+    let shifted=old.some(([nativeValue])=>!byNative.has(nativeValue));
     for(const group of record.groups){
       const legacy=byGroup.get(group.id)||[];
       if(legacy.length!==1)continue;

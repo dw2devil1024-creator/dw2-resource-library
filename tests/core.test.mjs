@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -128,3 +128,63 @@ assert.equal(safe.assignments['preset-two'],'kept');
 const soloThemes=planSmartGroups([{value:'puppy',label:'Puppy'}],{groups:[],assignments:{}},{allowSingletons:true});
 assert.deepEqual(soloThemes.groups.map(x=>x.name),['Puppy']);
 console.log('DW2 Resource Library: presets, world books, themes support confirmed singleton opt-in');
+
+
+// Stable world-book keys: deleting/reordering changes TT's index but not our folder.
+const fakeWorldSelect=(names)=>({id:'world_editor_select',options:names.map((name,i)=>({
+  disabled:false,value:String(i),textContent:name,selected:i===0
+}))});
+const initialOptions=optionsForSelect(fakeWorldSelect(['朴辛元','霍阖','蒋禹']));
+assert.equal(initialOptions[1].value,'1'); // TT's native selection must stay numeric.
+assert.equal(initialOptions[1].key,worldBookKey('霍阖'));
+assert.equal(assignmentKey(initialOptions[1]),worldBookKey('霍阖'));
+const stableState=createEmptyState(),stableRecord=ensureResource(stableState,'world:editor');
+stableRecord.groups=[{id:'one',name:'收藏'},{id:'two',name:'喜欢'}];
+stableRecord.assignments={'1':'one','2':'two'};
+let migrated=migrateWorldAssignments(stableState,initialOptions);
+assert.equal(migrated.changed,true);
+assert.equal(stableRecord.assignments[worldBookKey('霍阖')],'one');
+assert.equal(stableRecord.assignments[worldBookKey('蒋禹')],'two');
+assert.equal(Object.hasOwn(stableRecord.assignments,'1'),false);
+assert.equal(stableState.worldMigrationBackup['world:editor']['1'],'one');
+assert.equal(migrateWorldAssignments(stableState,initialOptions).changed,false);
+const afterDeletion=optionsForSelect(fakeWorldSelect(['霍阖','蒋禹']));
+let afterGroups=groupOptions(afterDeletion,stableRecord,true);
+assert.equal(afterDeletion[0].value,'0');
+assert.equal(afterGroups.find(g=>g.name==='收藏').items[0].label,'霍阖');
+assert.equal(afterGroups.find(g=>g.name==='喜欢').items[0].label,'蒋禹');
+const afterReorder=optionsForSelect(fakeWorldSelect(['蒋禹','霍阖','新的世界书']));
+afterGroups=groupOptions(afterReorder,stableRecord,true);
+assert.equal(afterGroups.find(g=>g.name==='收藏').items[0].label,'霍阖');
+assert.equal(afterGroups.find(g=>g.name==='喜欢').items[0].label,'蒋禹');
+const roundTrip=normalizeState(JSON.parse(JSON.stringify(stableState)));
+assert.equal(roundTrip.resources['world:editor'].assignments[worldBookKey('霍阖')],'one');
+assert.equal(roundTrip.worldMigrationBackup['world:editor']['2'],'two');
+
+// A previously deleted book can shift existing legacy indices. Only recover
+// exact-name singleton folders; back up anything else instead of misfiling it.
+const shiftedState=createEmptyState(),shifted=ensureResource(shiftedState,'world:editor');
+shifted.groups=[
+  {id:'a',name:'朴辛元'},{id:'gone',name:'已删除'},
+  {id:'c',name:'霍阖'},{id:'d',name:'蒋禹'}
+];
+shifted.assignments={'0':'a','1':'gone','2':'c','3':'d'};
+const currentWorlds=optionsForSelect(fakeWorldSelect(['朴辛元','霍阖','蒋禹']));
+migrated=migrateWorldAssignments(shiftedState,currentWorlds);
+assert.equal(migrated.uncertain,1);
+assert.equal(shifted.assignments[worldBookKey('霍阖')],'c');
+assert.equal(shifted.assignments[worldBookKey('蒋禹')],'d');
+assert.equal(shifted.assignments[worldBookKey('朴辛元')],'a');
+assert.equal(Object.values(shifted.assignments).includes('gone'),false);
+assert.equal(shiftedState.worldMigrationBackup['world:editor']['1'],'gone');
+assert.equal(normalizeState(JSON.parse(JSON.stringify(shiftedState))).worldMigrationBackup['world:editor']['1'],'gone');
+
+// Smart grouping uses stable filenames, never the native volatile indices.
+const smartWorlds=optionsForSelect(fakeWorldSelect(['【古风】大周','【古风】皇宫']));
+const smartState=createEmptyState(),smartRecord=ensureResource(smartState,'world:editor');
+const worldPlan=planSmartGroups(smartWorlds,smartRecord);
+assert.equal(worldPlan.total,2);
+assert.ok(worldPlan.groups[0].values.every(key=>key.startsWith('worldbook:')));
+applySmartGroups(smartRecord,worldPlan);
+assert.equal(groupOptions(optionsForSelect(fakeWorldSelect(['【古风】皇宫','【古风】大周'])),smartRecord).find(g=>g.name==='古风').items.length,2);
+console.log('DW2 Resource Library: deleting and reordering lorebooks preserves stable folders, with cautious legacy migration');

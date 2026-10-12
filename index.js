@@ -74,10 +74,23 @@ function synchronizeWorldAssignments(select){
 }
 const folderSourceId=adapter=>adapter?.source?.category==='world'?'world:editor':adapter.source.id;
 const folderRecord=adapter=>ensureResource(state,folderSourceId(adapter));
-function saveData(){
+function saveData(immediate=false){
   if(!fallbackStore){
     const current=nativeContext();
-    if(current?.extensionSettings){current.extensionSettings[STORE_KEY]=state;current.saveSettingsDebounced?.();return}
+    if(current?.extensionSettings){
+      current.extensionSettings[STORE_KEY]=state;
+      const saver=current.saveSettingsDebounced;
+      if(typeof saver==='function'){
+        saver();
+        // Explicit destructive user actions must not remain in TT's debounce
+        // queue when a refresh is triggered immediately afterward.
+        if(immediate && typeof saver.flush==='function'){
+          Promise.resolve(saver.flush()).catch(error=>
+            notify('保存分类失败，请勿立即刷新：'+(error?.message||error),'warning'));
+        }
+      }else notify('TT 未提供设置保存函数，请先导出备份','warning');
+      return;
+    }
   }
   try{localStorage.setItem(STORE_KEY,JSON.stringify(state))}catch(error){notify('分类保存失败：'+error.message,'warning')}
 }
@@ -362,7 +375,7 @@ function makeGroup(adapter){
     if(record.groups.some(g=>g.name===name))return false;
     record.groups.push({id:'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),name});
     unsuppressAutoGroup(record,name);
-    saveData();return true;
+    saveData(true);return true;
   });
 }
 function renameGroup(adapter,group){
@@ -374,7 +387,7 @@ function renameGroup(adapter,group){
     target.name=name;
     if(previousName!==name)suppressAutoGroup(record,previousName);
     unsuppressAutoGroup(record,name);
-    saveData();return true;
+    saveData(true);return true;
   });
 }
 function removeGroup(adapter,group){
@@ -384,7 +397,7 @@ function removeGroup(adapter,group){
     record.groups=record.groups.filter(g=>g.id!==group.id);
     for(const [value,id] of Object.entries(record.assignments))if(id===group.id)delete record.assignments[value];
     suppressAutoGroup(record,group.name);
-    saveData();
+    saveData(true);
     if(popover?.dataset.source===adapter.source.id)drawPopover(adapter);
     return true;
   },{confirmOnly:true,danger:true,message:'只删除文件夹分类，里面的预设、世界书或美化不会被删除。'});
@@ -624,9 +637,21 @@ async function checkAndUpdate(button){
     button.disabled=false;button.textContent='检查并更新';
   }
 }
-function refreshTavern(){
-  if(window.confirm('重新加载 TT 酒馆？请先保存尚未保存的预设、世界书或美化修改。'))
-    window.location.reload();
+async function refreshTavern(){
+  if(!window.confirm('重新加载 TT 酒馆？请先保存尚未保存的预设、世界书或美化修改。'))return;
+  const saver=nativeContext()?.saveSettingsDebounced;
+  if(typeof saver?.flush==='function'){
+    try{await saver.flush();}
+    catch(error){
+      notify('扩展设置保存失败，已取消刷新：'+(error?.message||error),'warning');
+      return;
+    }
+  }else{
+    // TT variants may wrap the debounce without exposing .flush().
+    // Give the most recent group edit a short chance to reach disk.
+    await new Promise(resolve=>setTimeout(resolve,1800));
+  }
+  window.location.reload();
 }
 function mountSettings(){
   let section=document.getElementById(SETTINGS_ID);

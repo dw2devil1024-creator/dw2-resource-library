@@ -114,9 +114,20 @@ with sync_playwright() as p:
       return {background:style.backgroundImage,backdrop:style.backdropFilter||style.webkitBackdropFilter};
     }""")
     tint=re.findall(r'rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)',glass['background'])
-    assert len(tint)>=4 and .89<=max(float(alpha) for _,_,_,alpha in tint)<=.94,glass
+    assert len(tint)>=3 and .96<=max(float(alpha) for _,_,_,alpha in tint)<=.98,glass
     assert all(int(red)>=int(blue) for red,green,blue,alpha in tint),glass
-    assert 'blur(28px)' in glass['backdrop'],glass
+    assert 'blur(20px)' in glass['backdrop'],glass
+    # Preset Console-inspired frame: an inset tab rail rather than a pill.
+    frame=manager_panel.evaluate("""el=>{
+      const panel=getComputedStyle(el);
+      const tabs=getComputedStyle(el.querySelector('.dw2rl-category-tabs'));
+      const folder=getComputedStyle(el.querySelector('.dw2rl-manager-folder'));
+      return {radius:panel.borderTopLeftRadius,
+              tabsBottom:tabs.borderBottomWidth,tabsMargin:tabs.marginLeft,
+              folderRadius:folder.borderTopLeftRadius};
+    }""")
+    assert frame['radius']=='7px' and frame['tabsBottom']=='1px',frame
+    assert frame['tabsMargin']=='0px' and frame['folderRadius']=='6px',frame
     page.locator('.dw2rl-assign').first.select_option(label='我的精选')
     saved=page.evaluate('window.stCtx.extensionSettings.dw2ResourceLibrary')
     assert saved['resources']['preset:openai']['groups'][0]['name']=='我的精选'

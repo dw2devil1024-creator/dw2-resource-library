@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.13-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.14-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -8,6 +8,7 @@ import {
   ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, migrateNamedResourceAssignments, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 import { createGlobalWorldGrouping } from './global-world-groups.js';
+import {createPresetParameterFold} from './preset-parameter-fold.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -17,7 +18,7 @@ const MANAGER_ID='dw2rl-manager';
 const sourceMap=new Map();
 const adapters=new Map();
 let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
-let globalWorldGrouping=null;
+let globalWorldGrouping=null,parameterFold=null;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
@@ -206,6 +207,7 @@ function scan(){
     }
   }
   ensureGlobalWorldGroups();
+  parameterFold?.sync();
 }
 function scheduleScan(){
   if(!alive||!state.enabled||scanTimer)return;
@@ -704,6 +706,15 @@ function mountSettings(){
     if(state.globalWorldGroupsEnabled&&!state.enabled)notify('请先启用原位分组选择，再开启全局世界书分类。','info');
   });
   globalRow.append(globalCheck,el('span','','全局世界书原生下拉内分组（实验性）'));body.append(globalRow);
+  const foldRow=el('label','toggle-row');
+  const foldCheck=el('input');foldCheck.type='checkbox';
+  foldCheck.id='dw2rl-parameter-fold-enable';foldCheck.checked=state.parameterFoldEnabled;
+  foldCheck.addEventListener('change',()=>{
+    state.parameterFoldEnabled=foldCheck.checked;saveData();
+    parameterFold?.configure(state.parameterFoldEnabled);
+  });
+  foldRow.append(foldCheck,el('span','','预设高级参数区折叠'));
+  body.append(foldRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
@@ -744,11 +755,14 @@ function onDOMChange(records){
     if(shouldMount&&shouldScan)break;
   }
   if(shouldScan)scheduleScan();
+  if(alive && state.parameterFoldEnabled && records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1&&(n.id==='range_block_openai'||n.querySelector?.('#range_block_openai'))))) parameterFold?.sync();
   if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings()}});
 }
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
+  parameterFold=createPresetParameterFold();
+  parameterFold.configure(state.parameterFoldEnabled);
   globalWorldGrouping=createGlobalWorldGrouping({
     getGroups:()=>{
       const select=document.getElementById('world_info');
@@ -768,7 +782,7 @@ function start(){
   watcher=new MutationObserver(onDOMChange);watcher.observe(document.body,{childList:true,subtree:true});
   if(state.enabled)scan();
   // Some TT pages construct select widgets after initial DOM load.
-  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan()}},1200);
+  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync()}},1200);
   globalThis.DW2ResourceLibrary={open:openManager,enable:()=>setEnabled(true),disable:()=>setEnabled(false),version:VERSION};
 }
 export function onEnable(){
@@ -789,6 +803,7 @@ export function onDisable(){
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
   globalWorldGrouping?.disable();globalWorldGrouping=null;
+  parameterFold?.disable();parameterFold=null;
   deactivateSelectors();closeManager();
   document.getElementById(MENU_ID)?.remove();
   document.getElementById(SETTINGS_ID)?.remove();settingsRoot=null;settingsReady=false;

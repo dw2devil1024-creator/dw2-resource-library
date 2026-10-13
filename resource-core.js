@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.13-beta.1';
+export const VERSION = '0.1.14-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -38,6 +38,7 @@ export function normalizeState(input) {
   state.enabled=input.enabled===true;
   state.autoGroup=input.autoGroup!==false;
   state.globalWorldGroupsEnabled=input.globalWorldGroupsEnabled===true;
+  state.parameterFoldEnabled=input.parameterFoldEnabled===true;
   state.legacyWorldMergeDone=input.legacyWorldMergeDone===true;
   if (input.resources && typeof input.resources==='object' && !Array.isArray(input.resources)) {
     for (const [id, raw] of Object.entries(input.resources).slice(0,100)) {

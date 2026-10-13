@@ -505,3 +505,17 @@ select.dw2rl-native-hidden {
   font-size:12px!important;
   font-weight:400!important;
 }
+
+/* v0.1.14: non-invasive fold for TT's original preset parameter container. */
+#dw2rl-parameter-fold{
+  box-sizing:border-box!important;display:flex!important;align-items:center;
+  width:100%!important;min-height:39px!important;margin:9px 0 8px!important;
+  padding:9px 12px!important;text-align:left!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(200,186,181,.32))!important;
+  border-radius:7px!important;background:rgba(139,123,116,.08)!important;
+  box-shadow:none!important;color:var(--SmartThemeBodyColor,inherit)!important;
+  font:500 12px/1.5 'Noto Serif SC','Songti SC',serif!important;
+  letter-spacing:.025em;cursor:pointer!important;
+}
+#dw2rl-parameter-fold:focus-visible{outline:2px solid var(--SmartThemeQuoteColor,#d2beb7)!important;outline-offset:2px}
+#range_block_openai.dw2rl-parameter-collapsed{display:none!important}

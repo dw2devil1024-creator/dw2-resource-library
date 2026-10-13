@@ -847,3 +847,43 @@ select.dw2rl-native-hidden {
  font:inherit!important;font-size:12px!important;line-height:1.45!important;
  box-shadow:none!important;opacity:1!important;cursor:pointer!important;
 }
+
+/* v0.1.29 · Theme-native connected outline for regex folders. */
+#regex_container .regex-script-container > .dw2rl-regex-header {
+  margin:16px 0 0!important;
+  border-bottom-left-radius:0!important;
+  border-bottom-right-radius:0!important;
+  border-bottom:0!important;
+  background:transparent!important;
+}
+#regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"]{
+  border-bottom:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-radius:7px!important;
+  margin-bottom:9px!important;
+}
+#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row{
+  box-sizing:border-box!important;
+  margin:0!important;
+  border-left:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-right:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-top:0!important;
+  border-bottom:0!important;
+  border-radius:0!important;
+  padding-left:8px!important;
+  padding-right:8px!important;
+  background:transparent!important;
+}
+#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
+  border-bottom:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-bottom-left-radius:7px!important;
+  border-bottom-right-radius:7px!important;
+  padding-bottom:9px!important;
+  margin-bottom:12px!important;
+}
+#regex_container .regex-script-container > .dw2rl-regex-header .dw2rl-regex-count{
+  display:inline-block!important;flex:none!important;white-space:nowrap!important;
+  opacity:.7!important;font-size:11px!important;letter-spacing:.02em!important;
+}
+#regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"] + .regex-script-label.dw2rl-regex-collapsed{
+  display:none!important;
+}

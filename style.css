@@ -619,3 +619,87 @@ select.dw2rl-native-hidden {
 #completion_prompt_manager_list .dw2rl-inline-folder > .dw2rl-folder-remove{
   flex:none;width:32px;font-size:13px!important;
 }
+
+/* v0.1.20 · Clean theme-native standalone headers; no prompt row wrapping. */
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section{
+  display:block!important;width:100%!important;list-style:none!important;
+  padding:0!important;margin:16px 0 8px!important;
+  min-height:0!important;box-sizing:border-box!important;
+  border:none!important;background:transparent!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section > .dw2rl-inline-folder{
+  display:flex!important;align-items:center!important;gap:4px!important;
+  width:100%!important;min-height:42px!important;box-sizing:border-box!important;
+  padding:4px 8px!important;margin:0!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(160,160,160,.3))!important;
+  border-radius:8px!important;
+  background:var(--SmartThemeBlurTintColor,transparent)!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section .dw2rl-inline-folder button{
+  display:block!important;width:auto!important;min-height:32px!important;
+  border:none!important;box-shadow:none!important;
+  padding:5px 7px!important;background:transparent!important;
+  color:inherit!important;font:inherit!important;font-size:12px!important;
+  cursor:pointer!important;touch-action:manipulation!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section .dw2rl-inline-folder-toggle{
+  flex:1!important;min-width:0!important;text-align:left!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section .dw2rl-folder-edit,
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section .dw2rl-folder-remove{
+  flex:none!important;width:30px!important;text-align:center!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt{
+  position:relative;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt > .dw2rl-prompt-range-choice{
+  position:absolute!important;right:4px!important;top:3px!important;
+  z-index:3!important;grid-column:auto!important;
+  min-height:25px!important;padding:3px 6px!important;
+  max-width:70px!important;font-size:10px!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(160,160,160,.3))!important;
+  border-radius:5px!important;background:var(--SmartThemeBlurTintColor,transparent)!important;
+  color:inherit!important;box-shadow:none!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-range-start{
+  outline:1px solid var(--SmartThemeQuoteColor,rgba(190,175,175,.5))!important;
+}
+body > .dw2rl-prompt-dialog-backdrop{
+  position:fixed!important;inset:0!important;z-index:2147483420!important;
+  display:flex!important;align-items:center;justify-content:center;
+  padding:16px!important;background:rgba(0,0,0,.50)!important;
+}
+.dw2rl-prompt-dialog{
+  width:min(410px,100%)!important;padding:19px!important;
+  display:flex!important;flex-direction:column;gap:15px;
+  border:1px solid var(--SmartThemeBorderColor,rgba(180,180,180,.3))!important;
+  border-radius:12px!important;background:var(--SmartThemeBlurTintColor,#302d2e)!important;
+  color:var(--SmartThemeBodyColor,#fff)!important;
+  box-shadow:0 14px 36px rgba(0,0,0,.25)!important;
+  font-family:'Noto Serif SC','Songti SC',serif!important;
+}
+.dw2rl-prompt-dialog-title{font:inherit!important;font-size:14px!important;line-height:1.6!important;}
+.dw2rl-prompt-dialog-input{
+  box-sizing:border-box!important;width:100%!important;min-width:0!important;
+  font-family:inherit!important;font-size:16px!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(180,180,180,.3))!important;
+  border-radius:7px!important;
+}
+.dw2rl-prompt-dialog-actions{display:flex!important;justify-content:flex-end;gap:9px!important}
+.dw2rl-prompt-dialog-actions button{
+  min-height:38px!important;padding:7px 15px!important;cursor:pointer!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(180,180,180,.3))!important;
+  border-radius:7px!important;box-shadow:none!important;
+  background:transparent!important;color:inherit!important;
+  font:inherit!important;font-size:12px!important;
+}
+.dw2rl-prompt-dialog-actions .dw2rl-prompt-dialog-submit{
+  background:var(--SmartThemeQuoteColor,rgba(165,145,145,.22))!important;
+}
+#dw2rl-prompt-folders #dw2rl-prompt-folders-actions button{
+  min-height:34px!important;padding:6px 13px!important;
+  background:transparent!important;color:inherit!important;
+  font-family:inherit!important;box-shadow:none!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(180,180,180,.35))!important;
+}

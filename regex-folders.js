@@ -25,19 +25,19 @@ export function createRegexFolders({enabled,getState,save,context}){
    root.querySelectorAll(':scope > .dw2rl-regex-header').forEach(x=>x.remove());
    for(const row of nativeRows(root))row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
  }
- function showDialog(title,initial,onSave){
+ function showDialog(title,initial,onSave,{confirmOnly=false,confirmText='保存'}={}){
    dialog?.remove();const modal=node('div','dw2rl-regex-dialog-backdrop');
    const form=node('form','dw2rl-regex-dialog');
    const input=node('input','text_pole');input.type='text';input.maxLength=50;input.value=initial;input.placeholder='文件夹名称';
    const actions=node('div','dw2rl-regex-dialog-actions');
    actions.append(btn('取消',()=>{modal.remove();dialog=null;},'menu_button dw2rl-regex-dialog-cancel'));
-   const ok=node('button','menu_button dw2rl-regex-dialog-submit','保存');ok.type='submit';actions.append(ok);
-   form.append(node('div','',title),input,actions);modal.append(form);
+   const ok=node('button','menu_button dw2rl-regex-dialog-submit',confirmText);ok.type='submit';actions.append(ok);
+   form.append(node('div','',title));if(!confirmOnly)form.append(input);form.append(actions);modal.append(form);
    document.querySelector('#regex_container')?.append(modal);dialog=modal;
    for(const eventName of ['pointerdown','touchstart','mousedown','click'])modal.addEventListener(eventName,e=>e.stopPropagation());
-   form.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();const name=trim(input.value);if(!name)return;if(onSave(name)!==false){modal.remove();dialog=null;schedule();}});
+   form.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();const name=trim(input.value);if(!confirmOnly&&!name)return;if(onSave(name)!==false){modal.remove();dialog=null;schedule();}});
    modal.addEventListener('click',e=>{if(e.target===modal){modal.remove();dialog=null;}});
-   setTimeout(()=>input.focus(),30);
+   if(!confirmOnly)setTimeout(()=>input.focus(),30);
  }
  function draw(scope,root){
   const key=scopeKey(scope);
@@ -60,17 +60,20 @@ export function createRegexFolders({enabled,getState,save,context}){
       const header=node('div','dw2rl-regex-header');
       const collapseKey=key+':'+gid;
       const toggle=btn((collapsed.get(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{collapsed.set(collapseKey,!collapsed.get(collapseKey));schedule();},'dw2rl-regex-folder-name');
-      const count=rows.filter(x=>r.entries[x.id]===gid).length;
-      header.append(toggle,node('small','',String(count)));
+      const members=rows.filter(x=>r.entries[x.id]===gid);
+      const count=members.length;
+      const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
+      header.dataset.collapsed=String(!!collapsed.get(collapseKey));
+      header.append(toggle,node('small','dw2rl-regex-count','('+active+'/'+count+')'));
       header.append(btn('✎',()=>showDialog('重命名文件夹',validGroups.get(gid),name=>{
         if(r.groups.some(g=>g.id!==gid&&g.name===name))return false;
         r.groups.find(g=>g.id===gid).name=name;save();
       })));
-      header.append(btn('×',()=>{if(!confirm('删除文件夹？正则本身不会删除。'))return;
+      header.append(btn('×',()=>showDialog('删除「'+validGroups.get(gid)+'」文件夹？正则不会被删除。','',()=>{
         r.groups=r.groups.filter(g=>g.id!==gid);
         for(const [id,value] of Object.entries(r.entries))if(value===gid)delete r.entries[id];
-        save();schedule();
-      }));
+        save();return true;
+      },{confirmOnly:true,confirmText:'删除文件夹'})));
       root.insertBefore(header,row);
     }
     // Move-to-folder menu belongs to the row and uses a native <select>,

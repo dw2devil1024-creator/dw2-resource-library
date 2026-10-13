@@ -117,6 +117,7 @@ export function createGlobalWorldGrouping({getGroups, onWarning=()=>{}}) {
         control.setAttribute('aria-expanded',String(expandedNow));
         control.textContent=(expandedNow?'▾ ':'▸ ')+section.name+' · '+sectionRows.length;
         control.addEventListener('mousedown',event=>{event.preventDefault();event.stopPropagation()});
+        control.addEventListener('mouseup',event=>{event.preventDefault();event.stopPropagation()});
         control.addEventListener('click',event=>{
           event.preventDefault();event.stopPropagation();
           expanded.set(section.key,!(expanded.get(section.key)!==false));

@@ -57,11 +57,18 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     try{
       const manager=context()?.getPresetManager?.('openai');
       if(!manager || safe(manager.getSelectedPresetName?.())!==name)return false;
-      // Selected preset settings are authoritative for its own embedded extensions.
-      const raw=manager.readPresetExtensionField?.({
-        name,path:'baibaiToolkit.presetPromptGroups'
-      });
-      const parsed=normalizeLegacyGroups(raw,validIds);
+      // Read the named preset object itself, not live serviceSettings:
+      // while TT switches A -> B, those settings can briefly still belong
+      // to A even though the preset dropdown already says B.
+      const preset=manager.getCompletionPresetByName?.(name);
+      const raw=preset?.extensions?.baibaiToolkit?.presetPromptGroups;
+      if(!raw)return false;
+      const embeddedIds=new Set((Array.isArray(preset?.prompts)?preset.prompts:[])
+        .map(p=>safe(p?.identifier)).filter(Boolean));
+      // The preset's own IDs prevent a half-completed switch from importing
+      // previous-preset assignments or only a partial set of its entries.
+      const ids=embeddedIds.size?embeddedIds:validIds;
+      const parsed=normalizeLegacyGroups(raw,ids);
       if(!parsed?.groups?.length||!Object.keys(parsed.entries).length)return false;
       // Never leak identifiers that aren't present in this preset.
       rec.groups=parsed.groups;rec.entries=parsed.entries;

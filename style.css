@@ -541,3 +541,33 @@ select.dw2rl-native-hidden {
 #dw2rl-prompt-folders-organizer-item{display:flex;align-items:center;gap:8px;font-size:11px}
 #dw2rl-prompt-folders-organizer-item span{flex:1;min-width:0;overflow-wrap:anywhere}
 #dw2rl-prompt-folders-organizer-item select{max-width:40%;min-width:95px}
+
+/* v0.1.18: inline folder rows; inherit TT theme instead of custom glass skin. */
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-inline-folder-host{
+  position:relative!important;
+}
+#completion_prompt_manager_list .dw2rl-inline-folder{
+  grid-column:1 / -1!important;display:block!important;width:100%!important;
+  padding:8px 11px!important;margin:0 0 7px!important;
+  border:1px solid var(--SmartThemeBorderColor,currentColor)!important;
+  border-radius:7px!important;
+  background:var(--SmartThemeBlurTintColor,transparent)!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;
+  font:inherit!important;font-family:'Noto Serif SC','Songti SC',serif!important;
+  font-size:12px!important;font-weight:500!important;
+  text-align:left!important;box-shadow:none!important;cursor:pointer!important;
+  touch-action:manipulation!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-prompt-folded-first > :not(.dw2rl-inline-folder){
+  display:none!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-prompt-folded-first{
+  display:grid!important;border:0!important;padding:0!important;
+  grid-template-columns:1fr!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-prompt-folded-first .dw2rl-inline-folder{
+  margin-bottom:0!important;
+}
+#dw2rl-prompt-folders .dw2rl-prompt-legacy-caption{
+  opacity:.6;font-size:10px;
+}

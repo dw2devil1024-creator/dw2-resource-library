@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.10-beta.1';
+export const VERSION = '0.1.11-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -31,12 +31,13 @@ export function sourceFromSelect(select) {
   const identifier = normalizedPresetKey(raw);
   return { id:'preset:'+identifier, category:'preset', label:PRESET_LABELS[identifier] || '预设 · '+String(raw).trim() };
 }
-export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},resourceMigrationBackup:{},legacyWorldMergeDone:false }; }
+export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,globalWorldGroupsEnabled:false,resources:{},worldMigrationBackup:{},resourceMigrationBackup:{},legacyWorldMergeDone:false }; }
 export function normalizeState(input) {
   const state=createEmptyState();
   if (!input || typeof input!=='object') return state;
   state.enabled=input.enabled===true;
   state.autoGroup=input.autoGroup!==false;
+  state.globalWorldGroupsEnabled=input.globalWorldGroupsEnabled===true;
   state.legacyWorldMergeDone=input.legacyWorldMergeDone===true;
   if (input.resources && typeof input.resources==='object' && !Array.isArray(input.resources)) {
     for (const [id, raw] of Object.entries(input.resources).slice(0,100)) {

@@ -22,7 +22,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function nativeRows(root){return [...root.children].filter(x=>x.classList?.contains('regex-script-label')&&x.id);}
  function clear(root){
-   root.querySelectorAll(':scope > .dw2rl-regex-header').forEach(x=>x.remove());
+   root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline').forEach(x=>x.remove());
    for(const row of nativeRows(root))row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
  }
  function showDialog(title,initial,onSave,{confirmOnly=false,confirmText='保存'}={}){
@@ -54,16 +54,33 @@ export function createRegexFolders({enabled,getState,save,context}){
   }),'menu_button');
   toolbar.append(newGroup,node('small','','仅整理界面 · 不改变正则执行与启用状态'));
   let last='';
+  const runs=[];
   rows.forEach((row,index)=>{
     const gid=validGroups.has(r.entries[row.id])?r.entries[row.id]:'';
     if(gid!==last&&gid){
       const header=node('div','dw2rl-regex-header');
+      runs.push({header,first:row,last:row,key:key+':'+gid});
       const collapseKey=key+':'+gid;
-      const toggle=btn((collapsed.get(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{collapsed.set(collapseKey,!collapsed.get(collapseKey));schedule();},'dw2rl-regex-folder-name');
+      const toggle=btn((collapsed.get(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{
+        const next=!collapsed.get(collapseKey);
+        collapsed.set(collapseKey,next);
+        // Fast path: change ONLY this folder's rows, no full TT list rebuild.
+        // All rows in noncontiguous runs of this group share the same state.
+        const sameGroup=rows.filter(x=>r.entries[x.id]===gid);
+        sameGroup.forEach(x=>x.classList.toggle('dw2rl-regex-collapsed',next));
+        root.querySelectorAll(':scope > .dw2rl-regex-header').forEach(h=>{
+          if(h.dataset.folderKey!==collapseKey)return;
+          h.dataset.collapsed=String(next);
+          const t=h.querySelector('.dw2rl-regex-folder-name');
+          if(t)t.textContent=(next?'▸ ':'▾ ')+validGroups.get(gid);
+        });
+        updateOutlines(root);
+      },'dw2rl-regex-folder-name');
       const members=rows.filter(x=>r.entries[x.id]===gid);
       const count=members.length;
       const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
       header.dataset.collapsed=String(!!collapsed.get(collapseKey));
+      header.dataset.folderKey=collapseKey;
       header.append(toggle,node('small','dw2rl-regex-count','('+active+'/'+count+')'));
       header.append(btn('✎',()=>showDialog('重命名文件夹',validGroups.get(gid),name=>{
         if(r.groups.some(g=>g.id!==gid&&g.name===name))return false;
@@ -135,10 +152,36 @@ export function createRegexFolders({enabled,getState,save,context}){
     }
     picker.dataset.scopeKey=key;
     picker.textContent=(validGroups.get(gid)||'未分组')+'  ▾';
-    if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');}
+    if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');
+      const run=runs[runs.length-1];if(run)run.last=row;
+    }
     if(gid&&collapsed.get(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
     last=gid;
   });
+  for(const run of runs){
+    const outline=node('div','dw2rl-regex-outline');
+    outline.dataset.folderKey=run.key;
+    root.append(outline);
+    outline._dw2rlHeader=run.header;
+    outline._dw2rlLast=run.last;
+  }
+  updateOutlines(root);
+ }
+ function updateOutlines(root){
+   const base=root.getBoundingClientRect();
+   for(const outline of root.querySelectorAll(':scope > .dw2rl-regex-outline')){
+     const header=outline._dw2rlHeader,last=outline._dw2rlLast;
+     if(!header?.isConnected || !last?.isConnected){outline.remove();continue;}
+     const collapsedNow=header.dataset.collapsed==='true';
+     const firstRect=header.getBoundingClientRect();
+     const lastRect=collapsedNow?firstRect:last.getBoundingClientRect();
+     const top=firstRect.top-base.top+root.scrollTop;
+     const left=firstRect.left-base.left+root.scrollLeft;
+     outline.style.top=top+'px';
+     outline.style.left=left+'px';
+     outline.style.width=firstRect.width+'px';
+     outline.style.height=Math.max(0,lastRect.bottom-firstRect.top)+'px';
+   }
  }
  function sync(){
   if(!enabled())return disable();

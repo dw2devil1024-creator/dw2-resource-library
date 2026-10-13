@@ -208,8 +208,8 @@ export function createPromptFolders({enabled,getState,save,context}){
     title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
-    actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup));
-    if(pending)actions.append(btn('✓ 保存分组',commit,'dw2rl-save-prompt-folders'));
+    actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));
+    if(pending)actions.append(btn('✓ 保存分组',commit,'menu_button dw2rl-save-prompt-folders'));
     toolbar.append(actions);
     // The real folders are now inline with the native rows.
     // Keep management actions separate from their presentation.

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.9-beta.1';
+export const VERSION = '0.1.10-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -31,7 +31,7 @@ export function sourceFromSelect(select) {
   const identifier = normalizedPresetKey(raw);
   return { id:'preset:'+identifier, category:'preset', label:PRESET_LABELS[identifier] || '预设 · '+String(raw).trim() };
 }
-export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},legacyWorldMergeDone:false }; }
+export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},resourceMigrationBackup:{},legacyWorldMergeDone:false }; }
 export function normalizeState(input) {
   const state=createEmptyState();
   if (!input || typeof input!=='object') return state;
@@ -72,6 +72,14 @@ export function normalizeState(input) {
           Object.entries(raw).filter(([key,val])=>
             typeof val==='string' && key.length<=512 && val.length<=56).slice(0,3000));
       }
+    }
+  }
+  const oldResourceBackups=input.resourceMigrationBackup;
+  if(oldResourceBackups && typeof oldResourceBackups==='object' && !Array.isArray(oldResourceBackups)){
+    for(const [id,raw] of Object.entries(oldResourceBackups).slice(0,100)){
+      if(!/^(preset:[a-z0-9]+|theme)$/.test(id) || !raw || typeof raw!=='object' || Array.isArray(raw))continue;
+      state.resourceMigrationBackup[id]=Object.fromEntries(
+        Object.entries(raw).filter(([key,val])=>key.length<=512 && typeof val==='string' && val.length<=56).slice(0,3000));
     }
   }
   return state;
@@ -120,6 +128,56 @@ export function unsuppressAutoGroup(record,name){
 export const WORLD_BOOK_KEY_PREFIX='worldbook:';
 export function worldBookKey(name){return WORLD_BOOK_KEY_PREFIX+String(name??'').trim().normalize('NFC');}
 export function assignmentKey(option){return String(option?.key ?? option?.value ?? '');}
+// Keep TT's native selector values untouched. Resource folders use stable names.
+export function presetResourceKey(name){return 'presetname:'+String(name??'').trim().normalize('NFC');}
+export function themeResourceKey(name){return 'theme:'+String(name??'').trim().normalize('NFC');}
+/** Preserve legacy mutable indices rather than assigning them to new presets
+ * after deletion. Safely recover name-valued selects and exact-name singleton
+ * folders only. Ambiguous old mappings remain exported as a backup. */
+export function migrateNamedResourceAssignments(state,sourceId,options){
+  if(!/^(preset:[a-z0-9]+|theme)$/.test(sourceId)||!Array.isArray(options)||!options.length)
+    return {changed:false,recovered:0,uncertain:0};
+  const record=state.resources?.[sourceId];
+  if(!record?.assignments||!Array.isArray(record.groups))return {changed:false,recovered:0,uncertain:0};
+  const prefix=sourceId==='theme'?'theme:':'presetname:';
+  const legacy=Object.entries(record.assignments).filter(([key])=>!key.startsWith(prefix));
+  if(!legacy.length)return {changed:false,recovered:0,uncertain:0};
+  if(!state.resourceMigrationBackup)state.resourceMigrationBackup={};
+  const archive=state.resourceMigrationBackup[sourceId]||{};
+  const groups=new Map(record.groups.map(group=>[group.id,group]));
+  const byLabel=new Map();
+  for(const item of options){
+    const name=String(item.label??'').normalize('NFC');
+    if(!byLabel.has(name))byLabel.set(name,[]);
+    byLabel.get(name).push(item);
+  }
+  const byGroup=new Map();
+  for(const [value,id] of legacy){
+    if(!byGroup.has(id))byGroup.set(id,[]);
+    byGroup.get(id).push(value);
+  }
+  let changed=false,recovered=0,uncertain=0;
+  for(const [oldValue,groupId] of legacy){
+    if(!Object.hasOwn(archive,oldValue)){archive[oldValue]=groupId;changed=true;}
+    const candidates=options.filter(item=>String(item.value)===oldValue);
+    // A selected value that literally equals a unique resource name is stable.
+    let match=candidates.length===1 && String(candidates[0].label)===oldValue ? candidates[0]:null;
+    // Numeric old values may point elsewhere; only exact named singleton folders are safe.
+    if(!match && byGroup.get(groupId)?.length===1 && groups.has(groupId)){
+      const named=byLabel.get(groups.get(groupId).name.normalize('NFC'))||[];
+      if(named.length===1)match=named[0];
+    }
+    if(match){
+      const key=assignmentKey(match);
+      if(key.startsWith(prefix) && !Object.hasOwn(record.assignments,key)){
+        record.assignments[key]=groupId;changed=true;recovered++;
+      }else if(!key.startsWith(prefix)||record.assignments[key]!==groupId){uncertain++;}
+    }else uncertain++;
+    delete record.assignments[oldValue];changed=true;
+  }
+  state.resourceMigrationBackup[sourceId]=archive;
+  return {changed,recovered,uncertain};
+}
 /** Preserve legacy numeric assignments and recover unambiguous singleton
  * folders by name when deletion/reordering has shifted native indices.
  * Unknown mappings stay in worldMigrationBackup rather than being guessed. */
@@ -241,7 +299,9 @@ export function optionsForSelect(select){
     return {
       value:String(option.value),label,selected:!!option.selected,
       ...(select.id==='world_editor_select'||select.id==='world_info'
-        ? {key:worldBookKey(label)} : {}),
+        ? {key:worldBookKey(label)}
+        : select.id==='themes' ? {key:themeResourceKey(label)}
+        : select.getAttribute?.('data-preset-manager-for') ? {key:presetResourceKey(label)} : {}),
     };
   });
 }

@@ -24,7 +24,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let legacyLoaded='',currentLegacy=false;
   const folderCollapsed=new Map();
-  let selecting=false,first='',pending=null;
+  let selecting=false,first='',pending=null,dialog=null;
   const doc=()=>document;
   function presetName(){
     try{
@@ -76,91 +76,103 @@ export function createPromptFolders({enabled,getState,save,context}){
   // No prompt is reordered. Multiple non-contiguous runs of the same folder
   // receive matching headings instead of changing native prompt order.
   function clearInline(rows){
+    const list=doc().getElementById('completion_prompt_manager_list');
+    list?.querySelectorAll(':scope > li.dw2rl-prompt-inline-section').forEach(node=>node.remove());
     for(const row of rows){
-      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first');
+      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first','dw2rl-inline-folder-host','dw2rl-prompt-range-start');
       row.querySelector(':scope > .dw2rl-prompt-range-choice')?.remove();
       row.querySelector(':scope > .dw2rl-inline-folder')?.remove();
-      row.classList.remove('dw2rl-inline-folder-host');
     }
-    doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
+    list?.classList.remove('dw2rl-prompt-list-filtering');
   }
   function showRows(rows,record){
     clearInline(rows);
     const effective=pending||record;
     const names=new Map(effective.groups.map(g=>[g.id,g.name]));
-    const valid=new Set(rows.map(row=>safe(row.dataset.pmIdentifier)));
-    let previous=null,runIndex=0;
+    const list=doc().getElementById('completion_prompt_manager_list');
+    let previous=null;
     for(const row of rows){
       const id=safe(row.dataset.pmIdentifier);
       const groupId=names.has(effective.entries[id])?effective.entries[id]:'';
-      const current=groupId||'__loose__';
-      if(current!==previous){
-        const header=el('div','dw2rl-inline-folder');
-        header.dataset.groupId=current;
-        const toggle=btn((expandedGroup(current)?'▾ ':'▸ ')+(names.get(groupId)||'未分组'),()=>{
-          folderCollapsed.set(current,!folderCollapsed.get(current));render();
+      if(groupId&&groupId!==previous){
+        const header=el('li','dw2rl-prompt-inline-section');
+        const bar=el('div','dw2rl-inline-folder');
+        const toggle=btn((expandedGroup(groupId)?'▾ ':'▸ ')+names.get(groupId),()=>{
+          folderCollapsed.set(groupId,!folderCollapsed.get(groupId));render();
         },'dw2rl-inline-folder-toggle');
-        toggle.setAttribute('aria-expanded',String(expandedGroup(current)));
-        header.addEventListener('mousedown',e=>e.stopPropagation());
-        header.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
-        header.append(toggle);
-        if(groupId){
-          header.append(btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'));
-          header.append(btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
-        }
-        row.prepend(header);
-        row.classList.add('dw2rl-inline-folder-host');
-        runIndex++;
+        toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
+        bar.append(toggle,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
+                       btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
+        header.append(bar);
+        list.insertBefore(header,row);
       }
       if(selecting){
-        const choice=btn(first===id?'● 起点':'○ 选取',()=>tapRange(id),'dw2rl-prompt-range-choice');
-        row.append(choice);
+        row.append(btn(first===id?'● 起点':'○ 选取',()=>tapRange(id),'dw2rl-prompt-range-choice'));
+        if(first===id)row.classList.add('dw2rl-prompt-range-start');
       }
-      if(!selecting&&!expandedGroup(current)){
-        if(current!==previous)row.classList.add('dw2rl-prompt-folded-first');
-        else row.classList.add('dw2rl-prompt-row-filtered');
-      }
-      previous=current;
+      if(groupId&&!selecting&&!expandedGroup(groupId))row.classList.add('dw2rl-prompt-row-filtered');
+      previous=groupId;
     }
-    return valid;
   }
   function expandedGroup(key){return folderCollapsed.get(key)!==true;}
   function saveRecord(){save();render();}
 
+  function openDialog({title,initial='',onSubmit,confirmLabel='保存',danger=false}){
+    dialog?.remove();
+    const backdrop=el('div','dw2rl-prompt-dialog-backdrop');
+    const box=el('form','dw2rl-prompt-dialog');
+    const heading=el('div','dw2rl-prompt-dialog-title',title);
+    const input=doc().createElement('input');
+    input.className='text_pole dw2rl-prompt-dialog-input';input.type='text';input.maxLength=50;input.value=initial;
+    input.placeholder='请输入分组名称';
+    const actions=el('div','dw2rl-prompt-dialog-actions');
+    const cancel=btn('取消',()=>{backdrop.remove();dialog=null;});
+    const ok=el('button','dw2rl-prompt-dialog-submit',confirmLabel);ok.type='submit';
+    if(danger)ok.classList.add('dw2rl-danger');
+    actions.append(cancel,ok);box.append(heading);if(!danger)box.append(input);box.append(actions);
+    backdrop.append(box);doc().body.append(backdrop);dialog=backdrop;
+    box.addEventListener('submit',ev=>{
+      ev.preventDefault();const value=safe(input.value).slice(0,50);
+      if(!danger&&!value){input.focus();return;}
+      if(onSubmit(value)!==false){backdrop.remove();dialog=null;}
+    });
+    backdrop.addEventListener('click',ev=>{if(ev.target===backdrop){backdrop.remove();dialog=null;}});
+    if(!danger)setTimeout(()=>input.focus(),60);
+  }
+  function getDraft(){
+    if(pending)return pending;
+    const rec=currentRecord();if(!rec)return null;
+    pending={groups:(rec.groups||[]).map(g=>({...g})),entries:{...rec.entries}};
+    return pending;
+  }
   function changeGroup(id){
-    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);
-    if(!group)return;
-    const name=prompt('修改文件夹名称',group.name);
-    if(name===null||!safe(name))return;
-    const title=safe(name).slice(0,50);
-    if(rec.groups.some(g=>g.id!==id&&g.name===title))return alert('已有同名分组');
-    if(!pending){pending={groups:rec.groups.map(g=>({...g})),entries:{...rec.entries}};}
-    pending.groups.find(g=>g.id===id).name=title;render();
+    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);if(!group)return;
+    openDialog({title:'修改文件夹名称',initial:group.name,onSubmit:name=>{
+      if(rec.groups.some(g=>g.id!==id&&g.name===name))return false;
+      getDraft().groups.find(g=>g.id===id).name=name;render();
+    }});
   }
   function removeGroup(id){
-    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);
-    if(!group||!confirm('删除「'+group.name+'」文件夹？里面的提示词会变成未分组，不会被删除。'))return;
-    if(!pending){pending={groups:rec.groups.map(g=>({...g})),entries:{...rec.entries}};}
-    pending.groups=pending.groups.filter(g=>g.id!==id);
-    for(const [key,gid] of Object.entries(pending.entries))if(gid===id)delete pending.entries[key];
-    folderCollapsed.delete(id);render();
+    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);if(!group)return;
+    openDialog({title:'删除「'+group.name+'」？提示词不会被删除。',danger:true,confirmLabel:'删除文件夹',onSubmit:()=>{
+      const draft=getDraft();draft.groups=draft.groups.filter(g=>g.id!==id);
+      for(const [key,gid] of Object.entries(draft.entries))if(gid===id)delete draft.entries[key];
+      folderCollapsed.delete(id);render();
+    }});
   }
-    function makeGroup(){ selecting=!selecting;first='';folderCollapsed.clear();render(); }
+  function makeGroup(){selecting=!selecting;first='';folderCollapsed.clear();render();}
   function tapRange(id){
     const ids=records().map(r=>safe(r.dataset.pmIdentifier));
     if(!first){first=id;render();return;}
-    const a=ids.indexOf(first),b=ids.indexOf(id);
-    if(a<0||b<0)return;
+    const a=ids.indexOf(first),b=ids.indexOf(id);if(a<0||b<0)return;
     const picked=ids.slice(Math.min(a,b),Math.max(a,b)+1);
-    const name=prompt('为这 '+picked.length+' 条提示词命名分组：');
-    if(name===null||!safe(name)){first='';render();return;}
-    const rec=currentRecord();if(!rec)return;
-    const groups=rec.groups||[],title=safe(name).slice(0,50);
-    if(groups.some(g=>g.name===title)){alert('已有同名分组，请改个名称');return;}
-    const groupId='dw2g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-    pending={groups:[...groups,{id:groupId,name:title}],entries:{...rec.entries}};
-    for(const key of picked)pending.entries[key]=groupId;
-    first='';selecting=false;render();
+    const rec=pending||currentRecord();if(!rec)return;
+    openDialog({title:'为这 '+picked.length+' 条提示词命名分组',onSubmit:name=>{
+      if(rec.groups.some(g=>g.name===name))return false;
+      const draft=getDraft(),gid='dw2g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      draft.groups.push({id:gid,name});for(const key of picked)draft.entries[key]=gid;
+      first='';selecting=false;render();
+    }});
   }
   function commit(){
     const rec=currentRecord();if(!rec||!pending)return;
@@ -204,6 +216,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
     clearInline(records());
+    dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
   }

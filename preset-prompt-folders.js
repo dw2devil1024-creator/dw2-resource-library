@@ -24,7 +24,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let legacyLoaded='',currentLegacy=false;
   const folderCollapsed=new Map();
-  let selecting=false,first='',pending=null,dialog=null;
+  let selecting=false,first='',pending=null,dialog=null,dragBound=null,busyGroup=false,building=false;
   const doc=()=>document;
   function presetName(){
     try{
@@ -85,6 +85,55 @@ export function createPromptFolders({enabled,getState,save,context}){
     }
     list?.classList.remove('dw2rl-prompt-list-filtering');
   }
+  function countGroup(id,rows,entries){
+    const members=rows.filter(r=>entries[safe(r.dataset.pmIdentifier)]===id);
+    return {total:members.length,on:members.filter(r=>r.querySelector('.prompt-manager-toggle-action.fa-toggle-on')).length};
+  }
+  async function toggleGroup(id){
+    if(busyGroup)return;
+    const record=currentRecord();if(!record)return;
+    const rows=records(),entries=record.entries;
+    const memberIds=rows.filter(r=>entries[safe(r.dataset.pmIdentifier)]===id).map(r=>safe(r.dataset.pmIdentifier));
+    const state=countGroup(id,rows,entries);
+    const enableAll=state.on<state.total;
+    const desired=enableAll?'fa-toggle-off':'fa-toggle-on';
+    const actionable=memberIds.filter(key=>{
+      const row=rows.find(r=>safe(r.dataset.pmIdentifier)===key);
+      return row?.querySelector('.prompt-manager-toggle-action.'+desired);
+    });
+    if(!actionable.length)return;
+    busyGroup=true;
+    try{
+      // Dispatch TT's original control. Never write the preset's enabled field.
+      // A list may be recreated by TT between individual native clicks.
+      for(const key of actionable){
+        const row=records().find(r=>safe(r.dataset.pmIdentifier)===key);
+        const icon=row?.querySelector('.prompt-manager-toggle-action.'+desired);
+        if(icon){icon.click();await new Promise(resolve=>setTimeout(resolve,60));}
+      }
+    }finally{busyGroup=false;schedule();}
+  }
+  function bindSort(list){
+    if(dragBound===list)return;
+    if(dragBound)globalThis.jQuery?.(dragBound).off('.dw2rlPromptTransfer');
+    dragBound=list;
+    const jq=globalThis.jQuery||globalThis.$;
+    if(!jq)return;
+    jq(list).on('sortstop.dw2rlPromptTransfer',(event,ui)=>{
+      const moved=ui?.item?.[0];const id=safe(moved?.dataset?.pmIdentifier);
+      if(!id || !list.contains(moved))return;
+      let preceding=moved.previousElementSibling;
+      while(preceding && !preceding.classList.contains('dw2rl-prompt-inline-section'))
+        preceding=preceding.previousElementSibling;
+      const target=preceding?.dataset?.groupId||'';
+      const state=currentRecord(),valid=state?.groups?.some(g=>g.id===target);
+      const newGroup=valid?target:'';
+      if(!state || (state.entries[id]||'')===newGroup)return;
+      if(newGroup)state.entries[id]=newGroup;else delete state.entries[id];
+      save();
+      schedule();
+    });
+  }
   function showRows(rows,record){
     clearInline(rows);
     const effective=pending||record;
@@ -96,12 +145,18 @@ export function createPromptFolders({enabled,getState,save,context}){
       const groupId=names.has(effective.entries[id])?effective.entries[id]:'';
       if(groupId&&groupId!==previous){
         const header=el('li','dw2rl-prompt-inline-section');
+        header.dataset.groupId=groupId;
         const bar=el('div','dw2rl-inline-folder');
         const toggle=btn((expandedGroup(groupId)?'▾ ':'▸ ')+names.get(groupId),()=>{
           folderCollapsed.set(groupId,!folderCollapsed.get(groupId));render();
         },'dw2rl-inline-folder-toggle');
         toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
-        bar.append(toggle,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
+        const counts=countGroup(groupId,rows,effective.entries);
+        const count=el('span','dw2rl-group-count','('+counts.on+'/'+counts.total+')');
+        const switchBtn=btn(counts.on===counts.total?'●':'○',()=>toggleGroup(groupId),'dw2rl-group-toggle');
+        switchBtn.title=counts.on===counts.total?'关闭本组可切换条目':'启用本组可切换条目';
+        switchBtn.setAttribute('aria-label',switchBtn.title);
+        bar.append(toggle,count,switchBtn,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
                        btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
         header.append(bar);
         list.insertBefore(header,row);
@@ -203,6 +258,8 @@ export function createPromptFolders({enabled,getState,save,context}){
       toolbar=el('div',PREFIX);list.parentElement.insertBefore(toolbar,list);
     }
     host=list;
+    bindSort(list);
+    list.classList.remove('dw2rl-prompt-rebuilding');
     toolbar.replaceChildren();
     const title=el('div',PREFIX+'-head','提示词分组');
     title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
@@ -226,12 +283,20 @@ export function createPromptFolders({enabled,getState,save,context}){
     // until its own rerender settles; don't flash ungrouped rows midway.
     timer=setTimeout(()=>{timer=0;render();},420);
   }
+  function prepare(){
+    const list=doc().getElementById('completion_prompt_manager_list');
+    if(!enabled()||!list)return;
+    list.classList.add('dw2rl-prompt-rebuilding');
+    schedule();
+  }
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
     clearInline(records());
+    if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
+    doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-rebuilding');
     dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
   }
-  return {sync:schedule,disable};
+  return {sync:schedule,prepare,disable};
 }

@@ -23,6 +23,7 @@ export function normalizeLegacyGroups(raw,validIds){
 export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let legacyLoaded='',currentLegacy=false;
+  const folderCollapsed=new Map();
   const doc=()=>document;
   function presetName(){
     try{
@@ -40,7 +41,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(!state.promptFolders||typeof state.promptFolders!=='object')state.promptFolders={};
     const name=presetName();
     if(!name)return null;
-    if(currentPreset!==name){currentPreset=name;active='all';legacyLoaded='';}
+    if(currentPreset!==name){currentPreset=name;active='all';legacyLoaded='';folderCollapsed.clear();}
     if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{}};
     return state.promptFolders[name];
   }
@@ -69,18 +70,53 @@ export function createPromptFolders({enabled,getState,save,context}){
   function btn(label,run,cls=''){
     const b=el('button',cls,label);b.type='button';b.addEventListener('click',run);return b;
   }
+  // Inline fold headings live INSIDE an existing prompt row, so the
+  // sortable list keeps exactly the same <li> nodes and identifiers.
+  // No prompt is reordered. Multiple non-contiguous runs of the same folder
+  // receive matching headings instead of changing native prompt order.
+  function clearInline(rows){
+    for(const row of rows){
+      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first');
+      row.querySelector(':scope > .dw2rl-inline-folder')?.remove();
+      row.classList.remove('dw2rl-inline-folder-host');
+    }
+    doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
+  }
   function showRows(rows,record){
-    const allowed=new Set(rows.map(row=>safe(row.dataset.pmIdentifier)));
+    clearInline(rows);
+    const names=new Map(record.groups.map(g=>[g.id,g.name]));
+    const valid=new Set(rows.map(row=>safe(row.dataset.pmIdentifier)));
+    let previous=null,runIndex=0;
     for(const row of rows){
       const id=safe(row.dataset.pmIdentifier);
-      const group=record.entries?.[id]||'';
-      const visible=active==='all' || (active==='loose'&&!group) || active===group;
-      row.classList.toggle('dw2rl-prompt-row-filtered',!visible);
+      const groupId=names.has(record.entries[id])?record.entries[id]:'';
+      const current=groupId||'__loose__';
+      if(current!==previous){
+        const header=el('button','dw2rl-inline-folder');
+        header.type='button';
+        header.textContent=(expandedGroup(current)?'▾ ':'▸ ')+(names.get(groupId)||'未分组');
+        header.setAttribute('aria-expanded',String(expandedGroup(current)));
+        header.dataset.groupId=current;
+        header.addEventListener('mousedown',e=>{e.stopPropagation();});
+        header.addEventListener('touchstart',e=>{e.stopPropagation();},{passive:true});
+        header.addEventListener('click',e=>{
+          e.preventDefault();e.stopPropagation();
+          folderCollapsed.set(current,!folderCollapsed.get(current));
+          render();
+        });
+        row.prepend(header);
+        row.classList.add('dw2rl-inline-folder-host');
+        runIndex++;
+      }
+      if(!expandedGroup(current)){
+        if(current!==previous)row.classList.add('dw2rl-prompt-folded-first');
+        else row.classList.add('dw2rl-prompt-row-filtered');
+      }
+      previous=current;
     }
-    const list=doc().getElementById('completion_prompt_manager_list');
-    if(list)list.classList.toggle('dw2rl-prompt-list-filtering',active!=='all');
-    return allowed;
+    return valid;
   }
+  function expandedGroup(key){return folderCollapsed.get(key)!==true;}
   function saveRecord(){save();render();}
   function makeGroup(){
     const name=safe(prompt('新建分组名称')).slice(0,50);
@@ -106,6 +142,30 @@ export function createPromptFolders({enabled,getState,save,context}){
     rec.groups=rec.groups.filter(g=>g.id!==group.id);
     for(const [id,value] of Object.entries(rec.entries))if(value===group.id)delete rec.entries[id];
     active='all';saveRecord();
+  }
+  function manageGroups(rec){
+    const overlay=el('div',PREFIX+'-organizer');
+    overlay.append(el('div',PREFIX+'-organizer-head','管理文件夹'));
+    const close=btn('关闭',()=>overlay.remove());overlay.firstChild.append(close);
+    for(const group of rec.groups){
+      const line=el('div',PREFIX+'-organizer-item');
+      line.append(el('span','',group.name));
+      line.append(btn('改名',()=>{
+        const value=prompt('修改文件夹名称',group.name);
+        if(value===null||!safe(value))return;
+        const name=safe(value).slice(0,50);
+        if(rec.groups.some(g=>g.id!==group.id&&g.name===name))return alert('名称已存在');
+        group.name=name;saveRecord();
+      }));
+      line.append(btn('删除',()=>{
+        if(!confirm('删除「'+group.name+'」文件夹？提示词不会删除。'))return;
+        rec.groups=rec.groups.filter(g=>g.id!==group.id);
+        for(const [id,gid] of Object.entries(rec.entries))if(gid===group.id)delete rec.entries[id];
+        saveRecord();
+      }));
+      overlay.append(line);
+    }
+    toolbar.append(overlay);
   }
   function organize(rows,record){
     const overlay=el('div',PREFIX+'-organizer');
@@ -153,20 +213,14 @@ export function createPromptFolders({enabled,getState,save,context}){
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
     actions.append(btn('＋ 新建分组',makeGroup),btn('整理归属',()=>organize(rows,rec)));
-    if(active!=='all'&&active!=='loose')actions.append(btn('改名',editGroup),btn('删除分组',deleteGroup));
+    actions.append(btn('管理文件夹',()=>manageGroups(rec)));
     toolbar.append(actions);
-    const tabs=el('div',PREFIX+'-tabs');
-    const makeTab=(key,name,count)=>{
-      const b=btn((active===key?'▾ ':'▸ ')+name+' · '+count,()=>{active=active===key?'all':key;render();},PREFIX+'-tab');
-      b.setAttribute('aria-pressed',String(active===key));tabs.append(b);
-    };
-    makeTab('all','全部',rows.length);
-    for(const g of rec.groups)makeTab(g.id,g.name,rows.filter(r=>rec.entries[safe(r.dataset.pmIdentifier)]===g.id).length);
-    makeTab('loose','未分组',rows.filter(r=>!rec.entries[safe(r.dataset.pmIdentifier)]||!rec.groups.some(g=>g.id===rec.entries[safe(r.dataset.pmIdentifier)])).length);
-    toolbar.append(tabs);
+    // The real folders are now inline with the native rows.
+    // Keep management actions separate from their presentation.
     showRows(rows,rec);
-    const count=active==='all'?rows.length:rows.filter(r=>!r.classList.contains('dw2rl-prompt-row-filtered')).length;
-    toolbar.append(el('div',PREFIX+'-hint',active==='all'?'当前显示原生完整列表，可正常拖拽排序':'仅显示当前分组 · '+count+' 项。需要拖拽请切回「全部」。'));
+    const total=rows.length;
+    toolbar.append(el('div',PREFIX+'-hint',total+' 条提示词 · 文件夹直接在下方列表中展开/收起；原有顺序不变'));
+
   }
   function schedule(){
     if(timer)clearTimeout(timer);
@@ -174,9 +228,9 @@ export function createPromptFolders({enabled,getState,save,context}){
   }
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
-    for(const row of records())row.classList.remove('dw2rl-prompt-row-filtered');
+    clearInline(records());
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
-    toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';
+    toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();
   }
   return {sync:schedule,disable};
 }

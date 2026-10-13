@@ -24,6 +24,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let legacyLoaded='',currentLegacy=false;
   const folderCollapsed=new Map();
+  let selecting=false,first='',pending=null;
   const doc=()=>document;
   function presetName(){
     try{
@@ -41,7 +42,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(!state.promptFolders||typeof state.promptFolders!=='object')state.promptFolders={};
     const name=presetName();
     if(!name)return null;
-    if(currentPreset!==name){currentPreset=name;active='all';legacyLoaded='';folderCollapsed.clear();}
+    if(currentPreset!==name){currentPreset=name;active='all';legacyLoaded='';folderCollapsed.clear();selecting=false;first='';pending=null;}
     if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{}};
     return state.promptFolders[name];
   }
@@ -77,6 +78,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   function clearInline(rows){
     for(const row of rows){
       row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first');
+      row.querySelector(':scope > .dw2rl-prompt-range-choice')?.remove();
       row.querySelector(':scope > .dw2rl-inline-folder')?.remove();
       row.classList.remove('dw2rl-inline-folder-host');
     }
@@ -84,12 +86,13 @@ export function createPromptFolders({enabled,getState,save,context}){
   }
   function showRows(rows,record){
     clearInline(rows);
-    const names=new Map(record.groups.map(g=>[g.id,g.name]));
+    const effective=pending||record;
+    const names=new Map(effective.groups.map(g=>[g.id,g.name]));
     const valid=new Set(rows.map(row=>safe(row.dataset.pmIdentifier)));
     let previous=null,runIndex=0;
     for(const row of rows){
       const id=safe(row.dataset.pmIdentifier);
-      const groupId=names.has(record.entries[id])?record.entries[id]:'';
+      const groupId=names.has(effective.entries[id])?effective.entries[id]:'';
       const current=groupId||'__loose__';
       if(current!==previous){
         const header=el('button','dw2rl-inline-folder');
@@ -108,7 +111,11 @@ export function createPromptFolders({enabled,getState,save,context}){
         row.classList.add('dw2rl-inline-folder-host');
         runIndex++;
       }
-      if(!expandedGroup(current)){
+      if(selecting){
+        const choice=btn(first===id?'● 起点':'○ 选取',()=>tapRange(id),'dw2rl-prompt-range-choice');
+        row.append(choice);
+      }
+      if(!selecting&&!expandedGroup(current)){
         if(current!==previous)row.classList.add('dw2rl-prompt-folded-first');
         else row.classList.add('dw2rl-prompt-row-filtered');
       }
@@ -118,79 +125,28 @@ export function createPromptFolders({enabled,getState,save,context}){
   }
   function expandedGroup(key){return folderCollapsed.get(key)!==true;}
   function saveRecord(){save();render();}
-  function makeGroup(){
-    const name=safe(prompt('新建分组名称')).slice(0,50);
-    if(!name)return;
+
+  function makeGroup(){ selecting=!selecting;first='';folderCollapsed.clear();render(); }
+  function tapRange(id){
+    const ids=records().map(r=>safe(r.dataset.pmIdentifier));
+    if(!first){first=id;render();return;}
+    const a=ids.indexOf(first),b=ids.indexOf(id);
+    if(a<0||b<0)return;
+    const picked=ids.slice(Math.min(a,b),Math.max(a,b)+1);
+    const name=prompt('为这 '+picked.length+' 条提示词命名分组：');
+    if(name===null||!safe(name)){first='';render();return;}
     const rec=currentRecord();if(!rec)return;
-    if(rec.groups.some(g=>g.name===name)){alert('这个分组名称已存在');return;}
-    rec.groups.push({id:'dw2g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),name});
-    saveRecord();
+    const groups=rec.groups||[],title=safe(name).slice(0,50);
+    if(groups.some(g=>g.name===title)){alert('已有同名分组，请改个名称');return;}
+    const groupId='dw2g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    pending={groups:[...groups,{id:groupId,name:title}],entries:{...rec.entries}};
+    for(const key of picked)pending.entries[key]=groupId;
+    first='';selecting=false;render();
   }
-  function editGroup(){
-    if(active==='all'||active==='loose')return;
-    const rec=currentRecord(),group=rec?.groups.find(g=>g.id===active);if(!group)return;
-    const name=prompt('修改分组名称。留空则取消修改',group.name);
-    if(name===null||!safe(name))return;
-    const next=safe(name).slice(0,50);
-    if(rec.groups.some(g=>g.id!==group.id&&g.name===next)){alert('已存在同名分组');return;}
-    group.name=next;saveRecord();
-  }
-  function deleteGroup(){
-    if(active==='all'||active==='loose')return;
-    const rec=currentRecord(),group=rec?.groups.find(g=>g.id===active);if(!group)return;
-    if(!confirm('删除「'+group.name+'」分组？分组内的提示词只会变成未分组，不会被删除。'))return;
-    rec.groups=rec.groups.filter(g=>g.id!==group.id);
-    for(const [id,value] of Object.entries(rec.entries))if(value===group.id)delete rec.entries[id];
-    active='all';saveRecord();
-  }
-  function manageGroups(rec){
-    const overlay=el('div',PREFIX+'-organizer');
-    overlay.append(el('div',PREFIX+'-organizer-head','管理文件夹'));
-    const close=btn('关闭',()=>overlay.remove());overlay.firstChild.append(close);
-    for(const group of rec.groups){
-      const line=el('div',PREFIX+'-organizer-item');
-      line.append(el('span','',group.name));
-      line.append(btn('改名',()=>{
-        const value=prompt('修改文件夹名称',group.name);
-        if(value===null||!safe(value))return;
-        const name=safe(value).slice(0,50);
-        if(rec.groups.some(g=>g.id!==group.id&&g.name===name))return alert('名称已存在');
-        group.name=name;saveRecord();
-      }));
-      line.append(btn('删除',()=>{
-        if(!confirm('删除「'+group.name+'」文件夹？提示词不会删除。'))return;
-        rec.groups=rec.groups.filter(g=>g.id!==group.id);
-        for(const [id,gid] of Object.entries(rec.entries))if(gid===group.id)delete rec.entries[id];
-        saveRecord();
-      }));
-      overlay.append(line);
-    }
-    toolbar.append(overlay);
-  }
-  function organize(rows,record){
-    const overlay=el('div',PREFIX+'-organizer');
-    const close=btn('关闭',()=>overlay.remove());
-    const heading=el('div',PREFIX+'-organizer-head','整理提示词归属');
-    heading.append(close);
-    overlay.append(heading,el('p',PREFIX+'-note','这里只修改文件夹归属，不改变提示词执行顺序。原生拖拽请切回「全部」。'));
-    const list=el('div',PREFIX+'-organizer-list');
-    for(const row of rows){
-      const id=safe(row.dataset.pmIdentifier);
-      const label=safe(row.querySelector('.completion_prompt_manager_prompt_name')?.getAttribute('data-pm-name'))||safe(row.textContent).slice(0,80);
-      const line=el('label',PREFIX+'-organizer-item');
-      line.append(el('span','',label));
-      const select=doc().createElement('select');select.setAttribute('aria-label','将 '+label+' 移入分组');
-      const loose=doc().createElement('option');loose.value='';loose.textContent='未分组';select.append(loose);
-      for(const g of record.groups){const opt=doc().createElement('option');opt.value=g.id;opt.textContent=g.name;select.append(opt);}
-      select.value=record.entries[id]||'';
-      select.addEventListener('change',()=>{
-        if(select.value)record.entries[id]=select.value;
-        else delete record.entries[id];
-        save();setTimeout(render,0);
-      });
-      line.append(select);list.append(line);
-    }
-    overlay.append(list);toolbar.append(overlay);
+  function commit(){
+    const rec=currentRecord();if(!rec||!pending)return;
+    rec.groups=pending.groups;rec.entries=pending.entries;
+    pending=null;save();render();
   }
   function render(){
     if(!enabled())return disable();
@@ -212,14 +168,14 @@ export function createPromptFolders({enabled,getState,save,context}){
     title.append(el('small','',currentLegacy?' · 已检测旧分组记录':' · 不改变执行顺序'));
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
-    actions.append(btn('＋ 新建分组',makeGroup),btn('整理归属',()=>organize(rows,rec)));
-    actions.append(btn('管理文件夹',()=>manageGroups(rec)));
+    actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup));
+    if(pending)actions.append(btn('✓ 保存分组',commit,'dw2rl-save-prompt-folders'));
     toolbar.append(actions);
     // The real folders are now inline with the native rows.
     // Keep management actions separate from their presentation.
     showRows(rows,rec);
     const total=rows.length;
-    toolbar.append(el('div',PREFIX+'-hint',total+' 条提示词 · 文件夹直接在下方列表中展开/收起；原有顺序不变'));
+    toolbar.append(el('div',PREFIX+'-hint',selecting?(first?'已选起点，请点击终点，系统会自动包含中间条目':'请点击任意提示词的「选取」作为起点'):(pending?'已创建分组，点击「保存分组」确认':'文件夹直接在下方列表内展开/收起 · '+total+' 条')));
 
   }
   function schedule(){
@@ -230,7 +186,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(timer)clearTimeout(timer);timer=0;
     clearInline(records());
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
-    toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();
+    toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
   }
   return {sync:schedule,disable};
 }

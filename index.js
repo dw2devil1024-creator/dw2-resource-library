@@ -466,7 +466,25 @@ function smartOrganize(adapter){
     message:explain(true),onToggle:checked=>explain(checked)});
 }
 function exportGroups(){
-  const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,worldMigrationBackup:state.worldMigrationBackup,resourceMigrationBackup:state.resourceMigrationBackup,version:VERSION,exportedAt:new Date().toISOString()};
+  // A classification backup must include every DW2-owned folder namespace,
+  // not only the original preset/world/theme resource-picker groups.
+  const data={
+    schemaVersion:state.schemaVersion,
+    enabled:state.enabled,
+    autoGroup:state.autoGroup,
+    resources:state.resources,
+    worldMigrationBackup:state.worldMigrationBackup,
+    resourceMigrationBackup:state.resourceMigrationBackup,
+    legacyWorldMergeDone:state.legacyWorldMergeDone,
+    globalWorldGroupsEnabled:state.globalWorldGroupsEnabled,
+    parameterFoldEnabled:state.parameterFoldEnabled,
+    promptFoldersEnabled:state.promptFoldersEnabled,
+    promptFolders:state.promptFolders,
+    regexFoldersEnabled:state.regexFoldersEnabled,
+    regexFolders:state.regexFolders,
+    version:VERSION,
+    exportedAt:new Date().toISOString()
+  };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   try{

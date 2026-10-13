@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.36-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.37-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */

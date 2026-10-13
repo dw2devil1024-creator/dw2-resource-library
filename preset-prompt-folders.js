@@ -24,7 +24,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let legacyLoaded='',currentLegacy=false;
   const folderCollapsed=new Map();
-  let selecting=false,first='',pending=null,dialog=null,dragBound=null,busyGroup=false,building=false;
+  let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
   const doc=()=>document;
   function presetName(){
     try{
@@ -88,6 +88,23 @@ export function createPromptFolders({enabled,getState,save,context}){
   function countGroup(id,rows,entries){
     const members=rows.filter(r=>entries[safe(r.dataset.pmIdentifier)]===id);
     return {total:members.length,on:members.filter(r=>r.querySelector('.prompt-manager-toggle-action.fa-toggle-on')).length};
+  }
+  function observeNativeRows(list){
+    if(observedList===list)return;
+    renderObserver?.disconnect();
+    observedList=list;
+    renderObserver=new MutationObserver(changes=>{
+      if(building || !enabled())return;
+      // Only native TT prompt row replacement matters. Ignore DW2's own
+      // folder headers and picker controls to avoid observer feedback loops.
+      const nativeChanged=changes.some(change=>{
+        if(change.type!=='childList'||change.target!==list)return false;
+        return [...change.addedNodes,...change.removedNodes].some(node=>
+          node.nodeType===1&&node.matches?.('li.completion_prompt_manager_prompt'));
+      });
+      if(nativeChanged)render();
+    });
+    renderObserver.observe(list,{childList:true});
   }
   function bindSort(list){
     if(dragBound===list)return;
@@ -219,11 +236,14 @@ export function createPromptFolders({enabled,getState,save,context}){
     pending=null;save();render();
   }
   function render(){
+    if(building)return;
     if(!enabled())return disable();
     const list=doc().getElementById('completion_prompt_manager_list');
     if(!list)return;
     const rows=records(),rec=currentRecord();
     if(!rec||!rows.length)return;
+    building=true;
+    try{
     const valid=new Set(rows.map(r=>safe(r.dataset.pmIdentifier)));
     initLegacy(rec,rows);
     if(!rec.groups)rec.groups=[];
@@ -234,6 +254,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     }
     host=list;
     bindSort(list);
+    observeNativeRows(list);
     toolbar.replaceChildren();
     const title=el('div',PREFIX+'-head','提示词分组');
     title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
@@ -249,13 +270,13 @@ export function createPromptFolders({enabled,getState,save,context}){
       ?(first?'已选起点，请选择最后一条；中间条目自动纳入。':'请选择分组的第一条和最后一条。')
       :'共 '+total+' 条 · 文件夹直接在下方展开或收起';
     toolbar.append(el('div',PREFIX+'-hint',message));
-
+    }finally{building=false;}
   }
   function schedule(){
     if(timer)clearTimeout(timer);
     // TT rebuilds native prompt rows while saving edits. Defer repaint
     // until its own rerender settles; don't flash ungrouped rows midway.
-    timer=setTimeout(()=>{timer=0;render();},420);
+    timer=setTimeout(()=>{timer=0;render();},35);
   }
   function prepare(){
     // React after native TT row replacement. Never hide the entire prompt list:
@@ -266,6 +287,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(timer)clearTimeout(timer);timer=0;
     clearInline(records());
     if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
+    renderObserver?.disconnect();renderObserver=null;observedList=null;
     dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;

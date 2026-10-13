@@ -1,11 +1,12 @@
 /**
  * DW2 · Resource Library: TT-native prompt grouping presentation.
  * Never changes native prompt order, prompt objects or draggable row nodes.
- * No automatic import from retired BaiBai preset grouping metadata.
+ * Restore only the currently selected preset's embedded grouping metadata once.
+ * Never rely on an installed BaiBai plugin or use another preset's folders.
  */
 const PREFIX='dw2rl-prompt-folders';
 const safe=(v)=>String(v??'').trim();
-// Archived parser remains for migration test fixtures; it is not used at runtime.
+// The embedded group schema comes from preset.extensions, not an installed plugin.
 export function normalizeLegacyGroups(raw,validIds){
   if(!raw||!Array.isArray(raw.groups)||!raw.prompts||typeof raw.prompts!=='object')return null;
   const seen=new Set(),groups=[];
@@ -20,7 +21,7 @@ export function normalizeLegacyGroups(raw,validIds){
   }
   return groups.length?{groups,entries}:null;
 }
-export function createPromptFolders({enabled,getState,save,context}){
+export function createPromptFolders({enabled,getState,save,context,getActivePromptIds}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   const folderCollapsed=new Map();
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
@@ -44,6 +45,40 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(currentPreset!==name){currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;}
     if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{}};
     return state.promptFolders[name];
+  }
+  // Import by exact *selected preset name* and only if DW2 has no folders yet.
+  // The same embedded field can be stored in a preset after BaiBai is gone.
+  // DW2's own edits always take precedence, including an intentional deletion.
+  function restoreSelectedPresetGroups(rec,validIds){
+    if(!enabled()||!rec||rec.embeddedImportHandled===true||
+       (rec.groups?.length||Object.keys(rec.entries||{}).length)||!validIds.size)return false;
+    const name=presetName();
+    if(!name || name!==currentPreset)return false;
+    try{
+      const manager=context()?.getPresetManager?.('openai');
+      if(!manager || safe(manager.getSelectedPresetName?.())!==name)return false;
+      // Selected preset settings are authoritative for its own embedded extensions.
+      const raw=manager.readPresetExtensionField?.({
+        name,path:'baibaiToolkit.presetPromptGroups'
+      });
+      const parsed=normalizeLegacyGroups(raw,validIds);
+      if(!parsed?.groups?.length||!Object.keys(parsed.entries).length)return false;
+      // Never leak identifiers that aren't present in this preset.
+      rec.groups=parsed.groups;rec.entries=parsed.entries;
+      rec.embeddedImportHandled=true;
+      // Defer listeners; snapshot reads can happen while the floating panel renders.
+      queueMicrotask(()=>save());
+      return true;
+    }catch(error){
+      console.warn('[DW2 Resource Library] Unable to read embedded preset groups',error);
+      return false;
+    }
+  }
+  function ensureSelectedPresetGroups(){
+    const rec=currentRecord();
+    if(!rec||!enabled())return false;
+    const ids=new Set((getActivePromptIds?.()||[]).map(safe).filter(Boolean));
+    return restoreSelectedPresetGroups(rec,ids);
   }
   function el(tag,cls='',label=''){
     const n=doc().createElement(tag);n.className=cls;n.textContent=label;return n;
@@ -115,6 +150,7 @@ export function createPromptFolders({enabled,getState,save,context}){
       const newGroup=valid?target:'';
       if(!state || (state.entries[id]||'')===newGroup)return;
       if(newGroup)state.entries[id]=newGroup;else delete state.entries[id];
+      state.embeddedImportHandled=true;
       save();
       schedule();
     });
@@ -236,6 +272,7 @@ export function createPromptFolders({enabled,getState,save,context}){
   function commit(){
     const rec=currentRecord();if(!rec||!pending)return;
     rec.groups=pending.groups;rec.entries=pending.entries;
+    rec.embeddedImportHandled=true; // never revive user-deleted folders
     pending=null;save();render();
   }
   function render(){
@@ -247,7 +284,9 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(!rec||!rows.length)return;
     building=true;
     try{
-    // Use DW2-owned per-preset groups; never auto-import retired plugin metadata.
+    // Restore embedded groups of THIS preset only, without altering TT prompts.
+    const validIds=new Set(rows.map(row=>safe(row.dataset.pmIdentifier)));
+    restoreSelectedPresetGroups(rec,validIds);
     if(!rec.groups)rec.groups=[];
     if(!rec.entries)rec.entries={};
     if(!toolbar || toolbar.parentElement!==list.parentElement || toolbar.nextElementSibling!==list){
@@ -294,5 +333,5 @@ export function createPromptFolders({enabled,getState,save,context}){
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
   }
-  return {sync:schedule,prepare,disable,getSelectedPresetName:presetName};
+  return {sync:schedule,prepare,disable,getSelectedPresetName:presetName,ensureSelectedPresetGroups};
 }

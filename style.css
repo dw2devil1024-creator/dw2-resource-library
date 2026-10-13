@@ -519,3 +519,6 @@ select.dw2rl-native-hidden {
 }
 #dw2rl-parameter-fold:focus-visible{outline:2px solid var(--SmartThemeQuoteColor,#d2beb7)!important;outline-offset:2px}
 #range_block_openai.dw2rl-parameter-collapsed{display:none!important}
+
+/* v0.1.15 · Additional TT chat-completion settings up to Logit Bias. */
+#openai_settings .dw2rl-fold-secondary-parameters{display:none!important}

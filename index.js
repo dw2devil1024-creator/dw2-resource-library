@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.10-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.11-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -7,6 +7,7 @@ import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
   ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, migrateNamedResourceAssignments, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
+import {installGlobalWorldGroups,refreshGlobalWorldGroups,uninstallGlobalWorldGroups} from './global-world-groups.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -209,6 +210,7 @@ function setEnabled(yes){
   }
   state.enabled=!!yes;saveData();
   if(state.enabled)scan();else deactivateSelectors();
+  refreshGlobalWorldGroups();
   syncSetting();return true;
 }
 function sourceOptions(adapter){
@@ -684,6 +686,15 @@ function mountSettings(){
   const autoRow=el('label','toggle-row');const autoCheck=el('input');autoCheck.type='checkbox';autoCheck.id='dw2rl-autogroup';autoCheck.checked=state.autoGroup;
   autoCheck.addEventListener('change',()=>{state.autoGroup=autoCheck.checked;saveData();if(popover){const adapter=sourceMap.get(popover.dataset.source);if(adapter)drawPopover(adapters.get(adapter))}});
   autoRow.append(autoCheck,el('span','','自动识别【名称】分组'));body.append(autoRow);
+  const globalRow=el('label','toggle-row');
+  const globalCheck=el('input');globalCheck.type='checkbox';
+  globalCheck.id='dw2rl-global-world-groups';globalCheck.checked=state.globalWorldGroupsEnabled;
+  globalCheck.addEventListener('change',()=>{
+    state.globalWorldGroupsEnabled=globalCheck.checked;
+    saveData();refreshGlobalWorldGroups();
+  });
+  globalRow.append(globalCheck,el('span','','全局世界书原生下拉分组（实验）'));
+  body.append(globalRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
@@ -692,7 +703,7 @@ function mountSettings(){
     updateButton,
     button('刷新酒馆','soft-btn',refreshTavern),
   );
-  body.append(actions,el('p','settings-tip','全局世界书使用 TT 原生选择框；角色卡世界书、预设和美化可独立分组。关闭开关后恢复原生选择框。'));
+  body.append(actions,el('p','settings-tip','全局世界书可选在 TT 原生多选下拉内展示同一套世界书文件夹；不会修改任何启用状态。不兼容时关闭实验开关即可恢复。'));
   header.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const visible=body.style.display==='none';body.style.display=visible?'block':'none';header.setAttribute('aria-expanded',String(visible));arrow.classList.toggle('down',!visible)});
   section.append(header,body);host.append(section);settingsRoot=section;settingsReady=true;sortSettings();
 }
@@ -728,6 +739,11 @@ function onDOMChange(records){
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
+  installGlobalWorldGroups({
+    enabled:()=>alive&&state.enabled&&state.globalWorldGroupsEnabled,
+    options:select=>optionsForSelect(select),
+    groups:options=>groupOptions(options,ensureResource(state,'world:editor'),state.autoGroup),
+  });
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));
@@ -758,6 +774,7 @@ export function onDisable(){
   if(scanTimer)clearTimeout(scanTimer);scanTimer=0;
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
+  uninstallGlobalWorldGroups();
   for(const off of listeners.splice(0))off();
   deactivateSelectors();closeManager();
   document.getElementById(MENU_ID)?.remove();

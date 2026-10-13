@@ -125,6 +125,9 @@ function schedule(){
 function onOpen(event){
   if(event?.target?.id==='world_info')schedule();
 }
+function onClose(event){
+  if(event?.target?.id==='world_info')restore();
+}
 function onSearch(event){
   if(event?.target?.matches?.('.select2-container--open .select2-search__field'))schedule();
 }
@@ -138,6 +141,7 @@ export function installGlobalWorldGroups(args){
   if(typeof jq==='function'){
     jq(document).on('select2:open.dw2rlglobal', '#world_info',onOpen);
     jq(document).on('select2:select.dw2rlglobal select2:unselect.dw2rlglobal','#world_info',onOpen);
+    jq(document).on('select2:close.dw2rlglobal','#world_info',onClose);
   }
   document.addEventListener('input',onSearch,true);
 }

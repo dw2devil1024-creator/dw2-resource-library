@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.10-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.11-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -7,6 +7,7 @@ import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
   ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, migrateNamedResourceAssignments, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
+import { createGlobalWorldGrouping } from './global-world-groups.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -16,6 +17,7 @@ const MANAGER_ID='dw2rl-manager';
 const sourceMap=new Map();
 const adapters=new Map();
 let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
+let globalWorldGrouping=null;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
@@ -176,6 +178,14 @@ function deactivateSelectors(){
   for(const adapter of adapters.values())cleanupAdapter(adapter);
   adapters.clear();sourceMap.clear();
 }
+function ensureGlobalWorldGroups(){
+  if(!globalWorldGrouping)return;
+  if(!alive || !state.enabled || !state.globalWorldGroupsEnabled){
+    globalWorldGrouping.disable();
+    return;
+  }
+  globalWorldGrouping.ensure();
+}
 function scan(){
   if(!alive || !state.enabled)return;
   if(!compatible()){
@@ -195,6 +205,7 @@ function scan(){
       if(sourceMap.get(adapter.source.id)===select)sourceMap.delete(adapter.source.id);
     }
   }
+  ensureGlobalWorldGroups();
 }
 function scheduleScan(){
   if(!alive||!state.enabled||scanTimer)return;
@@ -208,7 +219,7 @@ function setEnabled(yes){
     syncSetting();return false;
   }
   state.enabled=!!yes;saveData();
-  if(state.enabled)scan();else deactivateSelectors();
+  if(state.enabled)scan();else {deactivateSelectors();ensureGlobalWorldGroups();}
   syncSetting();return true;
 }
 function sourceOptions(adapter){
@@ -684,6 +695,15 @@ function mountSettings(){
   const autoRow=el('label','toggle-row');const autoCheck=el('input');autoCheck.type='checkbox';autoCheck.id='dw2rl-autogroup';autoCheck.checked=state.autoGroup;
   autoCheck.addEventListener('change',()=>{state.autoGroup=autoCheck.checked;saveData();if(popover){const adapter=sourceMap.get(popover.dataset.source);if(adapter)drawPopover(adapters.get(adapter))}});
   autoRow.append(autoCheck,el('span','','自动识别【名称】分组'));body.append(autoRow);
+  const globalRow=el('label','toggle-row');
+  const globalCheck=el('input');globalCheck.type='checkbox';globalCheck.id='dw2rl-global-world-groups';
+  globalCheck.checked=state.globalWorldGroupsEnabled;
+  globalCheck.addEventListener('change',()=>{
+    state.globalWorldGroupsEnabled=globalCheck.checked;
+    saveData();ensureGlobalWorldGroups();
+    if(state.globalWorldGroupsEnabled&&!state.enabled)notify('请先启用原位分组选择，再开启全局世界书分类。','info');
+  });
+  globalRow.append(globalCheck,el('span','','全局世界书原生下拉内分组（实验性）'));body.append(globalRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
@@ -692,7 +712,7 @@ function mountSettings(){
     updateButton,
     button('刷新酒馆','soft-btn',refreshTavern),
   );
-  body.append(actions,el('p','settings-tip','全局世界书使用 TT 原生选择框；角色卡世界书、预设和美化可独立分组。关闭开关后恢复原生选择框。'));
+  body.append(actions,el('p','settings-tip','全局世界书可单独启用原生 Select2 下拉内分组；默认关闭，不更改 TT 的原始多选内容。关闭分组后恢复原生显示。'));
   header.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const visible=body.style.display==='none';body.style.display=visible?'block':'none';header.setAttribute('aria-expanded',String(visible));arrow.classList.toggle('down',!visible)});
   section.append(header,body);host.append(section);settingsRoot=section;settingsReady=true;sortSettings();
 }
@@ -715,6 +735,7 @@ function onDOMChange(records){
       if(node.nodeType!==1)continue;
       // Ignore ordinary chat messages; watch only relevant TT settings/selectors.
       if(node.matches?.(SELECTORS) || node.querySelector?.(SELECTORS))shouldScan=true;
+      if(state.globalWorldGroupsEnabled && (node.matches?.('#world_info,.select2-container') || node.querySelector?.('#world_info,.select2-container')))shouldScan=true;
       if(node.matches?.('#srg-root,#srg-settings,.srg-select-shell') || node.querySelector?.('#srg-root,#srg-settings,.srg-select-shell'))shouldScan=true;
       if(node.matches?.('#extensionsMenu,#extensions_settings2,#extensions_settings,#dw2-lt-settings,#dw2-preset-console-settings,#jd-bookshelf-settings')
         ||node.querySelector?.('#extensionsMenu,#extensions_settings2,#extensions_settings,#dw2-lt-settings,#dw2-preset-console-settings,#jd-bookshelf-settings'))
@@ -728,6 +749,14 @@ function onDOMChange(records){
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
+  globalWorldGrouping=createGlobalWorldGrouping({
+    getGroups:()=>{
+      const select=document.getElementById('world_info');
+      if(!select || !state.globalWorldGroupsEnabled)return [];
+      return groupOptions(optionsForSelect(select),ensureResource(state,'world:editor'),state.autoGroup);
+    },
+    onWarning:message=>notify(message,'warning'),
+  });
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));
@@ -759,6 +788,7 @@ export function onDisable(){
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
+  globalWorldGrouping?.disable();globalWorldGrouping=null;
   deactivateSelectors();closeManager();
   document.getElementById(MENU_ID)?.remove();
   document.getElementById(SETTINGS_ID)?.remove();settingsRoot=null;settingsReady=false;

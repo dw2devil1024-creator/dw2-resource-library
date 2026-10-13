@@ -30,8 +30,8 @@ export function createRegexFolders({enabled,getState,save,context}){
    const form=node('form','dw2rl-regex-dialog');
    const input=node('input','text_pole');input.type='text';input.maxLength=50;input.value=initial;input.placeholder='文件夹名称';
    const actions=node('div','dw2rl-regex-dialog-actions');
-   actions.append(btn('取消',()=>modal.remove()));
-   const ok=node('button','menu_button','保存');ok.type='submit';actions.append(ok);
+   actions.append(btn('取消',()=>{modal.remove();dialog=null;},'menu_button dw2rl-regex-dialog-cancel'));
+   const ok=node('button','menu_button dw2rl-regex-dialog-submit','保存');ok.type='submit';actions.append(ok);
    form.append(node('div','',title),input,actions);modal.append(form);
    document.querySelector('#regex_container')?.append(modal);dialog=modal;
    for(const eventName of ['pointerdown','touchstart','mousedown','click'])modal.addEventListener(eventName,e=>e.stopPropagation());
@@ -75,19 +75,39 @@ export function createRegexFolders({enabled,getState,save,context}){
     }
     // Move-to-folder menu belongs to the row and uses a native <select>,
     // keeping TT's original script row, edit, enable and drag handlers.
-    row.querySelector(':scope > .dw2rl-regex-assign')?.remove();
-    const selector=node('select','dw2rl-regex-assign text_pole');
-    selector.setAttribute('aria-label','移动正则到文件夹');selector.title='移动到文件夹';
-    const loose=node('option','','未分组');loose.value='';selector.append(loose);
-    for(const g of r.groups){const opt=node('option','',g.name);opt.value=g.id;selector.append(opt);}
-    selector.value=gid;
-    selector.addEventListener('pointerdown',e=>e.stopPropagation());
-    selector.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
-    selector.addEventListener('change',()=>{
-       if(selector.value)r.entries[row.id]=selector.value;else delete r.entries[row.id];
-       save();schedule();
-    });
-    row.append(selector);
+    // Crucial on iOS: NEVER remove and recreate an open native select.
+    // TT and the extension refresh settings on timers; replacing the focused
+    // select in draw() dismisses the OS dropdown immediately.
+    let selector=row.querySelector(':scope > .dw2rl-regex-assign');
+    if(!selector){
+      selector=node('select','dw2rl-regex-assign text_pole');
+      selector.setAttribute('aria-label','移动正则到文件夹');
+      selector.title='移动到文件夹';
+      selector.addEventListener('pointerdown',e=>e.stopPropagation());
+      selector.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
+      selector.addEventListener('mousedown',e=>e.stopPropagation());
+      selector.addEventListener('click',e=>e.stopPropagation());
+      selector.addEventListener('change',()=>{
+        const scopeIdentity=selector.dataset.scopeKey;
+        const current=record(scopeIdentity);
+        if(selector.value)current.entries[row.id]=selector.value;
+        else delete current.entries[row.id];
+        save();schedule();
+      });
+      row.append(selector);
+    }
+    const signature=r.groups.map(g=>g.id+'='+g.name).join('|');
+    // Preserve active options while the user is interacting with the menu.
+    if(selector.dataset.optionsSignature!==signature){
+      const selected=gid;
+      selector.replaceChildren();
+      const loose=node('option','','未分组');loose.value='';selector.append(loose);
+      for(const g of r.groups){const opt=node('option','',g.name);opt.value=g.id;selector.append(opt);}
+      selector.dataset.optionsSignature=signature;
+      selector.value=selected;
+    }
+    selector.dataset.scopeKey=key;
+    if(document.activeElement!==selector && selector.value!==gid)selector.value=gid;
     if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');}
     if(gid&&collapsed.get(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
     last=gid;

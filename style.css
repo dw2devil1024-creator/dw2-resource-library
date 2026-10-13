@@ -918,8 +918,6 @@ select.dw2rl-native-hidden {
   border-radius:8px!important;
   background:transparent!important;
   box-shadow:none!important;
-  transition:height 120ms ease!important;
-}
-@media (prefers-reduced-motion:reduce){
-  #regex_container .regex-script-container > .dw2rl-regex-outline{transition:none!important}
+  visibility:hidden;
+  transition:none!important;
 }

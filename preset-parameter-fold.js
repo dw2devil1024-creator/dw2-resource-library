@@ -22,22 +22,19 @@ export function createPresetParameterFold(){
   function secondaryNodes(){
     const settings=document.getElementById('openai_settings');
     const prompt=settings?.querySelector('#completion_prompt_manager');
-    if(!prompt)return [];
-    // Only siblings of the prompt manager's containing range-block,
-    // not the prompt manager itself or any of its descendants.
-    let promptContainer=prompt;
-    while(promptContainer.parentElement && promptContainer.parentElement!==settings){
-      const parent=promptContainer.parentElement;
-      if(parent.parentElement===settings)break;
-      promptContainer=parent;
+    if(!settings||!prompt)return [];
+    // TT's prompt manager lives inside a direct-child .range-block.
+    // Walk upwards to exactly the child owned by #openai_settings;
+    // fold ONLY the siblings before it, never the prompt manager.
+    let boundary=prompt;
+    while(boundary.parentElement && boundary.parentElement!==settings){
+      boundary=boundary.parentElement;
     }
-    const parent=promptContainer.parentElement;
-    if(!parent || !settings.contains(parent))return [];
-    // Once we've reached the immediate child wrapper under #openai_settings,
-    // walk its direct children, ending strictly before the prompt container.
-    const actualPromptWrapper=prompt.closest('.range-block');
-    if(!actualPromptWrapper || actualPromptWrapper.parentElement!==parent)return [];
-    return [...parent.children].slice(0,[...parent.children].indexOf(actualPromptWrapper));
+    if(boundary.parentElement!==settings)return [];
+    const children=[...settings.children];
+    const boundaryIndex=children.indexOf(boundary);
+    if(boundaryIndex<0)return [];
+    return children.slice(0,boundaryIndex);
   }
   function sync(){
     const block=document.getElementById(BLOCK_ID);

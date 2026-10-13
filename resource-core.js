@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.34-beta.1';
+export const VERSION = '0.1.35-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },

@@ -140,6 +140,21 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     });
     renderObserver.observe(list,{childList:true});
   }
+  function groupAtDrop(moved,entries,validGroups){
+    // Decide from the immediately preceding *meaningful* sibling, never
+    // from a distant folder header across unrelated ungrouped prompts.
+    let preceding=moved.previousElementSibling;
+    while(preceding && !preceding.classList.contains('dw2rl-prompt-inline-section') &&
+          !preceding.classList.contains('dw2rl-prompt-continuation') &&
+          !preceding.classList.contains('completion_prompt_manager_prompt'))
+      preceding=preceding.previousElementSibling;
+    if(!preceding)return '';
+    let groupId='';
+    if(preceding.classList.contains('completion_prompt_manager_prompt'))
+      groupId=entries[safe(preceding.dataset.pmIdentifier)]||'';
+    else groupId=preceding.dataset.groupId||'';
+    return validGroups.has(groupId)?groupId:'';
+  }
   function bindSort(list){
     if(dragBound===list)return;
     if(dragBound)globalThis.jQuery?.(dragBound).off('.dw2rlPromptTransfer');
@@ -149,12 +164,10 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     jq(list).on('sortstop.dw2rlPromptTransfer',(event,ui)=>{
       const moved=ui?.item?.[0];const id=safe(moved?.dataset?.pmIdentifier);
       if(!id || !list.contains(moved))return;
-      let preceding=moved.previousElementSibling;
-      while(preceding && !preceding.classList.contains('dw2rl-prompt-inline-section') && !preceding.classList.contains('dw2rl-prompt-continuation'))
-        preceding=preceding.previousElementSibling;
-      const target=preceding?.dataset?.groupId||'';
-      const state=currentRecord(),valid=state?.groups?.some(g=>g.id===target);
-      const newGroup=valid?target:'';
+      const state=currentRecord();
+      if(!state)return;
+      const validGroups=new Set((state.groups||[]).map(g=>g.id));
+      const newGroup=groupAtDrop(moved,state.entries||{},validGroups);
       if(!state || (state.entries[id]||'')===newGroup)return;
       if(newGroup)state.entries[id]=newGroup;else delete state.entries[id];
       state.embeddedImportHandled=true;

@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.22-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.23-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -768,7 +768,7 @@ function onDOMChange(records){
   if(shouldScan)scheduleScan();
   if(alive&&state.promptFoldersEnabled&&records.some(record=>[...record.addedNodes].some(node=>
     node.nodeType===1 && (node.matches?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt') ||
-      node.querySelector?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt')))))promptFolders?.sync();
+      node.querySelector?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt')))))promptFolders?.prepare();
   if(alive && state.parameterFoldEnabled && records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1&&(n.id==='range_block_openai'||n.querySelector?.('#range_block_openai'))))) parameterFold?.sync();
   if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings()}});
 }

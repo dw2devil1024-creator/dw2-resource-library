@@ -1,11 +1,11 @@
 /**
  * DW2 · Resource Library: TT-native prompt grouping presentation.
  * Never changes native prompt order, prompt objects or draggable row nodes.
- * Legacy baibaiToolkit.presetPromptGroups is read-only.
+ * No automatic import from retired BaiBai preset grouping metadata.
  */
 const PREFIX='dw2rl-prompt-folders';
 const safe=(v)=>String(v??'').trim();
-const LEGACY='baibaiToolkit.presetPromptGroups';
+// Archived parser remains for migration test fixtures; it is not used at runtime.
 export function normalizeLegacyGroups(raw,validIds){
   if(!raw||!Array.isArray(raw.groups)||!raw.prompts||typeof raw.prompts!=='object')return null;
   const seen=new Set(),groups=[];
@@ -22,7 +22,6 @@ export function normalizeLegacyGroups(raw,validIds){
 }
 export function createPromptFolders({enabled,getState,save,context}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
-  let legacyLoaded='',currentLegacy=false;
   const folderCollapsed=new Map();
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
   const doc=()=>document;
@@ -42,28 +41,9 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(!state.promptFolders||typeof state.promptFolders!=='object')state.promptFolders={};
     const name=presetName();
     if(!name)return null;
-    if(currentPreset!==name){currentPreset=name;active='all';legacyLoaded='';folderCollapsed.clear();selecting=false;first='';pending=null;}
+    if(currentPreset!==name){currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;}
     if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{}};
     return state.promptFolders[name];
-  }
-  function oldGroups(validIds){
-    try{
-      const manager=context()?.getPresetManager?.('openai');
-      const raw=manager?.readPresetExtensionField?.({path:LEGACY});
-      return normalizeLegacyGroups(raw,validIds);
-    }catch{return null;}
-  }
-  function initLegacy(record,rows){
-    if(legacyLoaded===currentPreset)return;
-    legacyLoaded=currentPreset;
-    const old=oldGroups(new Set(rows.map(row=>safe(row.dataset.pmIdentifier))));
-    currentLegacy=!!old;
-    if(!old)return;
-    if(record.groups?.length || Object.keys(record.entries||{}).length)return;
-    // Import ONLY into our extension's category state. Never modify old data.
-    record.groups=old.groups.map(group=>({...group}));
-    record.entries={...old.entries};
-    save();
   }
   function el(tag,cls='',label=''){
     const n=doc().createElement(tag);n.className=cls;n.textContent=label;return n;
@@ -71,15 +51,27 @@ export function createPromptFolders({enabled,getState,save,context}){
   function btn(label,run,cls=''){
     const b=el('button',cls,label);b.type='button';b.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();run(event);});return b;
   }
-  // Inline fold headings live INSIDE an existing prompt row, so the
-  // sortable list keeps exactly the same <li> nodes and identifiers.
-  // No prompt is reordered. Multiple non-contiguous runs of the same folder
-  // receive matching headings instead of changing native prompt order.
+  // Keep native TT rows at their original positions and insert only display labels.
+  // One group gets one editable header, and any later runs get a passive cue.
+  function planPromptRuns(ids,entries,groups){
+    const valid=new Set(groups.map(g=>g.id)),seen=new Set();
+    let continued=false;
+    return ids.map((id,index)=>{
+      const gid=valid.has(entries[id])?entries[id]:'';
+      const prev=ids[index-1],next=ids[index+1];
+      const before=prev&&valid.has(entries[prev])?entries[prev]:'';
+      const after=next&&valid.has(entries[next])?entries[next]:'';
+      const start=!!gid&&gid!==before;
+      if(start){continued=seen.has(gid);seen.add(gid);}
+      if(!gid)continued=false;
+      return {gid,first:start&&!continued,continuation:start&&continued,continued:!!gid&&continued,last:!!gid&&gid!==after};
+    });
+  }
   function clearInline(rows){
     const list=doc().getElementById('completion_prompt_manager_list');
-    list?.querySelectorAll(':scope > li.dw2rl-prompt-inline-section').forEach(node=>node.remove());
+    list?.querySelectorAll(':scope > li.dw2rl-prompt-inline-section, :scope > li.dw2rl-prompt-continuation').forEach(node=>node.remove());
     for(const row of rows){
-      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first','dw2rl-inline-folder-host','dw2rl-prompt-range-start','dw2rl-group-body-row','dw2rl-group-body-last');
+      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first','dw2rl-inline-folder-host','dw2rl-prompt-range-start','dw2rl-group-body-row','dw2rl-group-body-last','dw2rl-prompt-continued-row');
       row.querySelector(':scope > .dw2rl-prompt-range-choice')?.remove();
       row.querySelector(':scope > .dw2rl-inline-folder')?.remove();
     }
@@ -116,7 +108,7 @@ export function createPromptFolders({enabled,getState,save,context}){
       const moved=ui?.item?.[0];const id=safe(moved?.dataset?.pmIdentifier);
       if(!id || !list.contains(moved))return;
       let preceding=moved.previousElementSibling;
-      while(preceding && !preceding.classList.contains('dw2rl-prompt-inline-section'))
+      while(preceding && !preceding.classList.contains('dw2rl-prompt-inline-section') && !preceding.classList.contains('dw2rl-prompt-continuation'))
         preceding=preceding.previousElementSibling;
       const target=preceding?.dataset?.groupId||'';
       const state=currentRecord(),valid=state?.groups?.some(g=>g.id===target);
@@ -132,11 +124,11 @@ export function createPromptFolders({enabled,getState,save,context}){
     const effective=pending||record;
     const names=new Map(effective.groups.map(g=>[g.id,g.name]));
     const list=doc().getElementById('completion_prompt_manager_list');
-    let previous=null;
-    for(const row of rows){
-      const id=safe(row.dataset.pmIdentifier);
-      const groupId=names.has(effective.entries[id])?effective.entries[id]:'';
-      if(groupId&&groupId!==previous){
+    const plans=planPromptRuns(rows.map(row=>safe(row.dataset.pmIdentifier)),effective.entries,effective.groups);
+    for(let index=0;index<rows.length;index++){
+      const row=rows[index],id=safe(row.dataset.pmIdentifier);
+      const plan=plans[index],groupId=plan.gid;
+      if(plan.first){
         const header=el('li','dw2rl-prompt-inline-section');
         header.dataset.groupId=groupId;
         const bar=el('div','dw2rl-inline-folder');
@@ -146,26 +138,30 @@ export function createPromptFolders({enabled,getState,save,context}){
         toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
         const counts=countGroup(groupId,rows,effective.entries);
         const count=el('span','dw2rl-group-count','('+counts.on+'/'+counts.total+')');
-        // Do not toggle prompt entries here. BaiBai's group "power" is
-        // separate metadata, not an instruction to flip all item switches.
         bar.append(toggle,count,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
                        btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
         header.append(bar);
         list.insertBefore(header,row);
+      }else if(plan.continuation){
+        // A lightweight pointer, not a duplicate folder or a delete action.
+        // groupId doubles as an accurate anchor for native sortstop assignment.
+        const note=el('li','dw2rl-prompt-continuation','↳ '+names.get(groupId)+' · 续');
+        note.dataset.groupId=groupId;
+        if(!expandedGroup(groupId))note.classList.add('dw2rl-prompt-continuation-hidden');
+        list.insertBefore(note,row);
       }
       if(selecting){
         row.append(btn(first===id?'● 起点':'○ 选取',()=>tapRange(id),'dw2rl-prompt-range-choice'));
         if(first===id)row.classList.add('dw2rl-prompt-range-start');
       }
       if(groupId){
-        row.classList.add('dw2rl-group-body-row');
-        const next=rows[rows.indexOf(row)+1];
-        const nextId=next?safe(next.dataset.pmIdentifier):'';
-        const nextGroup=names.has(effective.entries[nextId])?effective.entries[nextId]:'';
-        if(nextGroup!==groupId)row.classList.add('dw2rl-group-body-last');
+        if(plan.continued)row.classList.add('dw2rl-prompt-continued-row');
+        else {
+          row.classList.add('dw2rl-group-body-row');
+          if(plan.last)row.classList.add('dw2rl-group-body-last');
+        }
       }
       if(groupId&&!selecting&&!expandedGroup(groupId))row.classList.add('dw2rl-prompt-row-filtered');
-      previous=groupId;
     }
   }
   function expandedGroup(key){return folderCollapsed.get(key)!==true;}
@@ -251,8 +247,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     if(!rec||!rows.length)return;
     building=true;
     try{
-    const valid=new Set(rows.map(r=>safe(r.dataset.pmIdentifier)));
-    initLegacy(rec,rows);
+    // Use DW2-owned per-preset groups; never auto-import retired plugin metadata.
     if(!rec.groups)rec.groups=[];
     if(!rec.entries)rec.entries={};
     if(!toolbar || toolbar.parentElement!==list.parentElement || toolbar.nextElementSibling!==list){
@@ -264,7 +259,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     observeNativeRows(list);
     toolbar.replaceChildren();
     const title=el('div',PREFIX+'-head','提示词分组');
-    title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
+    title.append(el('small','',' · 按原生顺序整理'));
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
     actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));

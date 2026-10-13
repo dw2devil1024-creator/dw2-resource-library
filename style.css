@@ -753,3 +753,40 @@ select.dw2rl-native-hidden {
   border:0!important;background:transparent!important;
   color:inherit!important;box-shadow:none!important;
 }
+
+/* v0.1.26 · One light, theme-native contour around each visible group.
+   Original TT prompt rows remain independent draggable siblings. */
+#completion_prompt_manager_list{
+  --dw2rl-folder-stroke:var(--SmartThemeBorderColor,rgba(170,160,165,.34));
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section{
+  margin:17px 0 0!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section > .dw2rl-inline-folder{
+  margin:0!important;
+  border-bottom-left-radius:0!important;
+  border-bottom-right-radius:0!important;
+  border-bottom:0!important;
+  border-color:var(--dw2rl-folder-stroke)!important;
+  background:transparent!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-inline-section:has(.dw2rl-inline-folder-toggle[aria-expanded="false"]) > .dw2rl-inline-folder{
+  border-bottom:1px solid var(--dw2rl-folder-stroke)!important;
+  border-bottom-left-radius:8px!important;
+  border-bottom-right-radius:8px!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-group-body-row{
+  box-sizing:border-box!important;
+  border-left:1px solid var(--dw2rl-folder-stroke)!important;
+  border-right:1px solid var(--dw2rl-folder-stroke)!important;
+  margin-top:0!important;margin-bottom:0!important;
+  padding-left:max(6px,env(safe-area-inset-left,0px))!important;
+  padding-right:6px!important;
+  border-radius:0!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-group-body-last{
+  border-bottom:1px solid var(--dw2rl-folder-stroke)!important;
+  border-bottom-left-radius:8px!important;
+  border-bottom-right-radius:8px!important;
+  padding-bottom:8px!important;margin-bottom:12px!important;
+}

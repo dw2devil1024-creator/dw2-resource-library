@@ -79,7 +79,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     const list=doc().getElementById('completion_prompt_manager_list');
     list?.querySelectorAll(':scope > li.dw2rl-prompt-inline-section').forEach(node=>node.remove());
     for(const row of rows){
-      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first','dw2rl-inline-folder-host','dw2rl-prompt-range-start');
+      row.classList.remove('dw2rl-prompt-row-filtered','dw2rl-prompt-folded-first','dw2rl-inline-folder-host','dw2rl-prompt-range-start','dw2rl-group-body-row','dw2rl-group-body-last');
       row.querySelector(':scope > .dw2rl-prompt-range-choice')?.remove();
       row.querySelector(':scope > .dw2rl-inline-folder')?.remove();
     }
@@ -156,6 +156,13 @@ export function createPromptFolders({enabled,getState,save,context}){
       if(selecting){
         row.append(btn(first===id?'● 起点':'○ 选取',()=>tapRange(id),'dw2rl-prompt-range-choice'));
         if(first===id)row.classList.add('dw2rl-prompt-range-start');
+      }
+      if(groupId){
+        row.classList.add('dw2rl-group-body-row');
+        const next=rows[rows.indexOf(row)+1];
+        const nextId=next?safe(next.dataset.pmIdentifier):'';
+        const nextGroup=names.has(effective.entries[nextId])?effective.entries[nextId]:'';
+        if(nextGroup!==groupId)row.classList.add('dw2rl-group-body-last');
       }
       if(groupId&&!selecting&&!expandedGroup(groupId))row.classList.add('dw2rl-prompt-row-filtered');
       previous=groupId;

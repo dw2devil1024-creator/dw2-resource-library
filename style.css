@@ -745,9 +745,6 @@ select.dw2rl-native-hidden {
 #dw2rl-prompt-folders-hint{margin:8px 0 0!important;line-height:1.55!important}
 
 /* v0.1.23: group counts, compact switch, and no transient ungrouped flash. */
-#completion_prompt_manager_list.dw2rl-prompt-rebuilding{
-  visibility:hidden!important;
-}
 #completion_prompt_manager_list > li.dw2rl-prompt-inline-section .dw2rl-group-count{
   flex:none;white-space:nowrap;font-size:10px;opacity:.72;margin-right:4px;
 }

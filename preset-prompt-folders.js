@@ -89,30 +89,6 @@ export function createPromptFolders({enabled,getState,save,context}){
     const members=rows.filter(r=>entries[safe(r.dataset.pmIdentifier)]===id);
     return {total:members.length,on:members.filter(r=>r.querySelector('.prompt-manager-toggle-action.fa-toggle-on')).length};
   }
-  async function toggleGroup(id){
-    if(busyGroup)return;
-    const record=currentRecord();if(!record)return;
-    const rows=records(),entries=record.entries;
-    const memberIds=rows.filter(r=>entries[safe(r.dataset.pmIdentifier)]===id).map(r=>safe(r.dataset.pmIdentifier));
-    const state=countGroup(id,rows,entries);
-    const enableAll=state.on<state.total;
-    const desired=enableAll?'fa-toggle-off':'fa-toggle-on';
-    const actionable=memberIds.filter(key=>{
-      const row=rows.find(r=>safe(r.dataset.pmIdentifier)===key);
-      return row?.querySelector('.prompt-manager-toggle-action.'+desired);
-    });
-    if(!actionable.length)return;
-    busyGroup=true;
-    try{
-      // Dispatch TT's original control. Never write the preset's enabled field.
-      // A list may be recreated by TT between individual native clicks.
-      for(const key of actionable){
-        const row=records().find(r=>safe(r.dataset.pmIdentifier)===key);
-        const icon=row?.querySelector('.prompt-manager-toggle-action.'+desired);
-        if(icon){icon.click();await new Promise(resolve=>setTimeout(resolve,60));}
-      }
-    }finally{busyGroup=false;schedule();}
-  }
   function bindSort(list){
     if(dragBound===list)return;
     if(dragBound)globalThis.jQuery?.(dragBound).off('.dw2rlPromptTransfer');
@@ -153,10 +129,9 @@ export function createPromptFolders({enabled,getState,save,context}){
         toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
         const counts=countGroup(groupId,rows,effective.entries);
         const count=el('span','dw2rl-group-count','('+counts.on+'/'+counts.total+')');
-        const switchBtn=btn(counts.on===counts.total?'●':'○',()=>toggleGroup(groupId),'dw2rl-group-toggle');
-        switchBtn.title=counts.on===counts.total?'关闭本组可切换条目':'启用本组可切换条目';
-        switchBtn.setAttribute('aria-label',switchBtn.title);
-        bar.append(toggle,count,switchBtn,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
+        // Do not toggle prompt entries here. BaiBai's group "power" is
+        // separate metadata, not an instruction to flip all item switches.
+        bar.append(toggle,count,btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'),
                        btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
         header.append(bar);
         list.insertBefore(header,row);
@@ -259,7 +234,6 @@ export function createPromptFolders({enabled,getState,save,context}){
     }
     host=list;
     bindSort(list);
-    list.classList.remove('dw2rl-prompt-rebuilding');
     toolbar.replaceChildren();
     const title=el('div',PREFIX+'-head','提示词分组');
     title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
@@ -284,16 +258,14 @@ export function createPromptFolders({enabled,getState,save,context}){
     timer=setTimeout(()=>{timer=0;render();},420);
   }
   function prepare(){
-    const list=doc().getElementById('completion_prompt_manager_list');
-    if(!enabled()||!list)return;
-    list.classList.add('dw2rl-prompt-rebuilding');
+    // React after native TT row replacement. Never hide the entire prompt list:
+    // an interrupted native render must leave the original UI usable.
     schedule();
   }
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
     clearInline(records());
     if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
-    doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-rebuilding');
     dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;

@@ -10,6 +10,7 @@ import {
 import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
 import {createPromptFolders} from './preset-prompt-folders.js';
+import {promptManager} from '../../../openai.js';
 import {createRegexFolders} from './regex-folders.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
@@ -797,7 +798,12 @@ function start(){
       // Notify the floating preset console immediately after a folder edit.
       window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
     },
-    context:nativeContext
+    context:nativeContext,
+    getActivePromptIds:()=>{
+      const current=promptManager?.activeCharacter;
+      return current?promptManager.getPromptOrderForCharacter(current)
+        .map(entry=>entry?.identifier).filter(Boolean):[];
+    }
   });
   parameterFold=createPresetParameterFold();
   parameterFold.configure(state.parameterFoldEnabled);
@@ -827,6 +833,9 @@ function start(){
     // state; the floating console must not depend on a later settings save.
     getPromptFolderSnapshot:()=>{
       if(!alive)return null;
+      // The native prompt editor may be closed. Restore this exact preset's
+      // embedded metadata using PromptManager IDs without touching the DOM.
+      promptFolders?.ensureSelectedPresetGroups?.();
       const presetName=promptFolders?.getSelectedPresetName?.()||'';
       const record=presetName?state.promptFolders?.[presetName]:null;
       return {

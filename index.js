@@ -1,11 +1,11 @@
 /**
- * DW2 · Resource Library v0.1.9-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.10-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
 import {
   VERSION, STORE_KEY, CATEGORIES, createEmptyState, normalizeState,
-  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
+  ensureResource, sourceFromSelect, groupOptions, managerGroups, optionsForSelect, assignmentKey, migrateWorldAssignments, migrateLegacyWorldFolders, migrateNamedResourceAssignments, suppressAutoGroup, unsuppressAutoGroup, planSmartGroups, applySmartGroups, characterLinkedWorld
 } from './resource-core.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
@@ -70,6 +70,18 @@ function synchronizeWorldAssignments(select){
   if(result.uncertain && !warnedAboutLegacyWorlds){
     warnedAboutLegacyWorlds=true;
     notify('部分旧世界书分类因删除或排序变化无法确定原归属，旧记录已安全备份；请检查“未分类”，不要再次智能整理覆盖。','warning');
+  }
+}
+const warnedAboutLegacyResources=new Set();
+function synchronizeNamedAssignments(select,source){
+  if(!source || (source.category!=='preset' && source.category!=='theme'))return;
+  const options=optionsForSelect(select);
+  if(!options.length)return;
+  const result=migrateNamedResourceAssignments(state,source.id,options);
+  if(result.changed)saveData();
+  if(result.uncertain&&!warnedAboutLegacyResources.has(source.id)){
+    warnedAboutLegacyResources.add(source.id);
+    notify('部分旧'+(source.category==='preset'?'预设':'美化')+'分类使用过可能变化的编号，无法确认原归属。旧映射已保存到分类备份，请在“未分类”中核对整理。','warning');
   }
 }
 const folderSourceId=adapter=>adapter?.source?.category==='world'?'world:editor':adapter.source.id;
@@ -151,12 +163,13 @@ function connect(select,source){
   if(style.fontSize)trigger.style.fontSize=style.fontSize;
   adapter.observer=new MutationObserver(()=>{
     synchronizeWorldAssignments(select);
+    synchronizeNamedAssignments(select,source);
     refreshTrigger(adapter);
     if(popover?.dataset.source===source.id)drawPopover(adapter);
   });
   adapter.observer.observe(select,{childList:true,subtree:true,attributes:true,attributeFilter:['selected','value','disabled']});
   adapters.set(select,adapter);sourceMap.set(source.id,select);
-  synchronizeWorldAssignments(select);refreshTrigger(adapter);
+  synchronizeWorldAssignments(select);synchronizeNamedAssignments(select,source);refreshTrigger(adapter);
 }
 function deactivateSelectors(){
   closePopover();
@@ -200,6 +213,7 @@ function setEnabled(yes){
 }
 function sourceOptions(adapter){
   synchronizeWorldAssignments(adapter?.select);
+  synchronizeNamedAssignments(adapter?.select,adapter?.source);
   return optionsForSelect(adapter?.select);
 }
 function linkedWorldFor(adapter){
@@ -434,7 +448,7 @@ function smartOrganize(adapter){
     message:explain(true),onToggle:checked=>explain(checked)});
 }
 function exportGroups(){
-  const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,worldMigrationBackup:state.worldMigrationBackup,version:VERSION,exportedAt:new Date().toISOString()};
+  const data={schemaVersion:state.schemaVersion,autoGroup:state.autoGroup,resources:state.resources,worldMigrationBackup:state.worldMigrationBackup,resourceMigrationBackup:state.resourceMigrationBackup,version:VERSION,exportedAt:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   try{
@@ -713,7 +727,7 @@ function onDOMChange(records){
 }
 function start(){
   if(alive)return;
-  alive=true;warnedAboutLegacyWorlds=false;loadData();mergeWorldBookFolders();
+  alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
   mountSettings();mountMenu();
   document.addEventListener('click',documentClick,true);listeners.push(()=>document.removeEventListener('click',documentClick,true));
   document.addEventListener('keydown',documentKeydown,true);listeners.push(()=>document.removeEventListener('keydown',documentKeydown,true));

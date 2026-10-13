@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.26-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.27-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -10,6 +10,7 @@ import {
 import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
 import {createPromptFolders} from './preset-prompt-folders.js';
+import {createRegexFolders} from './regex-folders.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -19,7 +20,7 @@ const MANAGER_ID='dw2rl-manager';
 const sourceMap=new Map();
 const adapters=new Map();
 let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
-let globalWorldGrouping=null,parameterFold=null,promptFolders=null;
+let globalWorldGrouping=null,parameterFold=null,promptFolders=null,regexFolders=null;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
@@ -210,6 +211,7 @@ function scan(){
   ensureGlobalWorldGroups();
   parameterFold?.sync();
   promptFolders?.sync();
+  regexFolders?.sync();
 }
 function scheduleScan(){
   if(!alive||!state.enabled||scanTimer)return;
@@ -726,6 +728,15 @@ function mountSettings(){
   });
   promptRow.append(promptCheck,el('span','','预设内部提示词分组（基础测试版）'));
   body.append(promptRow);
+  const regexRow=el('label','toggle-row');
+  const regexCheck=el('input');regexCheck.type='checkbox';
+  regexCheck.id='dw2rl-regex-folders-enabled';regexCheck.checked=state.regexFoldersEnabled;
+  regexCheck.addEventListener('change',()=>{
+    state.regexFoldersEnabled=regexCheck.checked;saveData();
+    if(state.regexFoldersEnabled)regexFolders?.sync();else regexFolders?.disable();
+  });
+  regexRow.append(regexCheck,el('span','','正则文件夹分组（实验性）'));
+  body.append(regexRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
@@ -766,6 +777,7 @@ function onDOMChange(records){
     if(shouldMount&&shouldScan)break;
   }
   if(shouldScan)scheduleScan();
+  if(alive&&state.regexFoldersEnabled&&records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1&&(n.matches?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')||n.querySelector?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')))))regexFolders?.sync();
   if(alive&&state.promptFoldersEnabled&&records.some(record=>[...record.addedNodes].some(node=>
     node.nodeType===1 && (node.matches?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt') ||
       node.querySelector?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt')))))promptFolders?.prepare();
@@ -775,6 +787,7 @@ function onDOMChange(records){
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
+  regexFolders=createRegexFolders({enabled:()=>alive&&state.regexFoldersEnabled,getState:()=>state,save:()=>saveData()});
   promptFolders=createPromptFolders({
     enabled:()=>alive&&state.promptFoldersEnabled,
     getState:()=>state,
@@ -802,7 +815,7 @@ function start(){
   watcher=new MutationObserver(onDOMChange);watcher.observe(document.body,{childList:true,subtree:true});
   if(state.enabled)scan();
   // Some TT pages construct select widgets after initial DOM load.
-  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync();promptFolders?.sync()}},1200);
+  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync();promptFolders?.sync();regexFolders?.sync()}},1200);
   globalThis.DW2ResourceLibrary={open:openManager,enable:()=>setEnabled(true),disable:()=>setEnabled(false),version:VERSION};
 }
 export function onEnable(){
@@ -822,6 +835,7 @@ export function onDisable(){
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
+  regexFolders?.disable();regexFolders=null;
   promptFolders?.disable();promptFolders=null;
   globalWorldGrouping?.disable();globalWorldGrouping=null;
   parameterFold?.disable();parameterFold=null;

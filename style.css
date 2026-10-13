@@ -891,13 +891,13 @@ select.dw2rl-native-hidden {
 #regex_container .regex-script-container{position:relative!important}
 #regex_container .regex-script-container > .dw2rl-regex-header{
   position:relative!important;z-index:1!important;
-  margin:16px 0 8px!important;
+  margin:7px 0 4px!important;
   padding:5px 8px!important;
   border:0!important;border-radius:0!important;
   background:transparent!important;
 }
 #regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"]{
-  margin-bottom:12px!important;
+  margin-bottom:7px!important;
 }
 #regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row,
 #regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
@@ -908,7 +908,7 @@ select.dw2rl-native-hidden {
   background:transparent!important;
 }
 #regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
-  margin-bottom:14px!important;
+  margin-bottom:6px!important;
 }
 #regex_container .regex-script-container > .dw2rl-regex-outline{
   position:absolute!important;display:block!important;

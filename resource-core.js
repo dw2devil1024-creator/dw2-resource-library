@@ -79,7 +79,7 @@ export function normalizeState(input) {
     }
   }
   if(input.regexFolders && typeof input.regexFolders==='object' && !Array.isArray(input.regexFolders)){
-    for(const scope of ['global','preset','scoped']){
+    for(const scope of Object.keys(input.regexFolders).filter(k=>k==='global'||/^preset:[^\n]{1,150}$/.test(k)||/^scoped:[a-zA-Z0-9_-]{1,100}$/.test(k)).slice(0,160)){
       const raw=input.regexFolders[scope];if(!raw || typeof raw!=='object')continue;
       const groups=[],seen=new Set();
       for(const g of (Array.isArray(raw.groups)?raw.groups:[]).slice(0,120)){

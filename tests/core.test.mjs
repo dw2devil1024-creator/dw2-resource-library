@@ -310,9 +310,9 @@ const oldState={
   prompts:{a:{groupId:'core'},b:{groupId:'style'},c:{groupId:'missing'},lost:{groupId:'core'}}
 };
 const valid=new Set(['a','b','c']);
-const migrated=normalizeLegacyGroups(oldState,valid);
-assert.deepEqual(migrated.groups.map(x=>x.name),['核心规则','文风系统']);
-assert.deepEqual(migrated.entries,{a:'core',b:'style'});
+const migratedLegacyPromptGroups=normalizeLegacyGroups(oldState,valid);
+assert.deepEqual(migratedLegacyPromptGroups.groups.map(x=>x.name),['核心规则','文风系统']);
+assert.deepEqual(migratedLegacyPromptGroups.entries,{a:'core',b:'style'});
 assert.equal(normalizeLegacyGroups({},valid),null);
 const promptFolderState=normalizeState({promptFoldersEnabled:true,promptFolders:{'织界 V659':{groups:[{id:'core',name:'核心规则'}],entries:{a:'core',b:'missing'}}}});
 assert.equal(promptFolderState.promptFoldersEnabled,true);

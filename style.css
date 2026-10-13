@@ -848,45 +848,8 @@ select.dw2rl-native-hidden {
  box-shadow:none!important;opacity:1!important;cursor:pointer!important;
 }
 
-/* v0.1.29 · Theme-native connected outline for regex folders. */
-#regex_container .regex-script-container > .dw2rl-regex-header {
-  margin:16px 0 0!important;
-  border-bottom-left-radius:0!important;
-  border-bottom-right-radius:0!important;
-  border-bottom:0!important;
-  background:transparent!important;
-}
-#regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"]{
-  border-bottom:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  border-radius:7px!important;
-  margin-bottom:9px!important;
-}
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row{
-  box-sizing:border-box!important;
-  margin:0!important;
-  border-left:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  border-right:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  border-top:0!important;
-  border-bottom:0!important;
-  border-radius:0!important;
-  padding-left:8px!important;
-  padding-right:8px!important;
-  background:transparent!important;
-}
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
-  border-bottom:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  border-bottom-left-radius:7px!important;
-  border-bottom-right-radius:7px!important;
-  padding-bottom:9px!important;
-  margin-bottom:12px!important;
-}
-#regex_container .regex-script-container > .dw2rl-regex-header .dw2rl-regex-count{
-  display:inline-block!important;flex:none!important;white-space:nowrap!important;
-  opacity:.7!important;font-size:11px!important;letter-spacing:.02em!important;
-}
-#regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"] + .regex-script-label.dw2rl-regex-collapsed{
-  display:none!important;
-}
+/* Regex group count, read-only. */
+#regex_container .regex-script-container > .dw2rl-regex-header .dw2rl-regex-count{font-size:11px;opacity:.7;white-space:nowrap;flex:none}
 
 /* v0.1.30 · Theme-native regex assignment popover, not iOS <select>. */
 #regex_container .regex-script-label > .dw2rl-regex-picker.menu_button{
@@ -923,23 +886,40 @@ select.dw2rl-native-hidden {
   background:rgba(165,160,160,.16)!important;
 }
 
-/* v0.1.31 · Continuous side rails, even where TT row gaps or backgrounds intervene. */
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row{
-  position:relative!important;
-  border-left:0!important;border-right:0!important;
-  box-shadow:inset 1px 0 0 var(--SmartThemeBorderColor,rgba(175,170,170,.4)),
-             inset -1px 0 0 var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+
+/* v0.1.32 · ONE measured outline per group run, no per-row border stitching. */
+#regex_container .regex-script-container{position:relative!important}
+#regex_container .regex-script-container > .dw2rl-regex-header{
+  position:relative!important;z-index:1!important;
+  margin:16px 0 8px!important;
+  padding:5px 8px!important;
+  border:0!important;border-radius:0!important;
+  background:transparent!important;
 }
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row::before,
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row::after{
-  content:""!important;pointer-events:none!important;position:absolute!important;
-  top:-8px!important;bottom:-1px!important;width:1px!important;
-  background:var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  z-index:2!important;
+#regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"]{
+  margin-bottom:12px!important;
 }
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row::before{left:0!important}
-#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row::after{right:0!important}
+#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-row,
 #regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
-  border-bottom:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
-  border-bottom-left-radius:7px!important;border-bottom-right-radius:7px!important;
+  border:0!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  margin:0!important;
+  background:transparent!important;
+}
+#regex_container .regex-script-container > .regex-script-label.dw2rl-regex-group-end{
+  margin-bottom:14px!important;
+}
+#regex_container .regex-script-container > .dw2rl-regex-outline{
+  position:absolute!important;display:block!important;
+  pointer-events:none!important;z-index:3!important;
+  box-sizing:border-box!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-radius:8px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  transition:height 120ms ease!important;
+}
+@media (prefers-reduced-motion:reduce){
+  #regex_container .regex-script-container > .dw2rl-regex-outline{transition:none!important}
 }

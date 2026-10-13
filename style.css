@@ -522,3 +522,22 @@ select.dw2rl-native-hidden {
 
 /* v0.1.15 · Additional TT chat-completion settings up to Logit Bias. */
 #openai_settings .dw2rl-fold-secondary-parameters{display:none!important}
+
+/* v0.1.17 | Prompt folders: never reorder or move native PromptManager rows. */
+#completion_prompt_manager_list > li.dw2rl-prompt-row-filtered{display:none!important}
+#completion_prompt_manager_list.dw2rl-prompt-list-filtering .drag-handle{pointer-events:none!important;opacity:.3!important}
+#dw2rl-prompt-folders{box-sizing:border-box;margin:10px 0 12px;padding:10px 10px 9px;border:1px solid var(--SmartThemeBorderColor,rgba(170,160,165,.28));border-radius:9px;background:rgba(140,132,134,.08);color:var(--SmartThemeBodyColor,inherit);font:400 12px/1.6 'Noto Serif SC','Songti SC',serif}
+#dw2rl-prompt-folders *{box-sizing:border-box}
+#dw2rl-prompt-folders-head{display:flex;align-items:center;gap:7px;font-weight:600}
+#dw2rl-prompt-folders-head small{font-size:9px;font-weight:400;opacity:.62}
+#dw2rl-prompt-folders-actions,#dw2rl-prompt-folders-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+#dw2rl-prompt-folders button,#dw2rl-prompt-folders select{font:400 11px/1.45 'Noto Serif SC','Songti SC',serif!important;color:inherit!important;background:rgba(138,133,137,.09)!important;border:1px solid var(--SmartThemeBorderColor,rgba(166,158,161,.26))!important;border-radius:6px!important;box-shadow:none!important;padding:7px 10px!important;min-height:33px;cursor:pointer}
+#dw2rl-prompt-folders-tabs{max-height:160px;overflow:auto;overscroll-behavior:contain}
+#dw2rl-prompt-folders-tabs button[aria-pressed="true"]{background:rgba(178,171,181,.21)!important;border-color:var(--SmartThemeQuoteColor,rgba(200,183,184,.5))!important}
+#dw2rl-prompt-folders-hint,#dw2rl-prompt-folders-note{font-size:10px;line-height:1.6;opacity:.68;margin-top:8px}
+#dw2rl-prompt-folders-organizer{padding:9px;margin-top:9px;border:1px solid var(--SmartThemeBorderColor,rgba(166,158,161,.26));border-radius:7px}
+#dw2rl-prompt-folders-organizer-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+#dw2rl-prompt-folders-organizer-list{display:flex;flex-direction:column;gap:7px;max-height:300px;overflow-y:auto;padding-top:9px}
+#dw2rl-prompt-folders-organizer-item{display:flex;align-items:center;gap:8px;font-size:11px}
+#dw2rl-prompt-folders-organizer-item span{flex:1;min-width:0;overflow-wrap:anywhere}
+#dw2rl-prompt-folders-organizer-item select{max-width:40%;min-width:95px}

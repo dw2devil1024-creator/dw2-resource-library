@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.16-beta.1';
+export const VERSION = '0.1.17-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -31,7 +31,7 @@ export function sourceFromSelect(select) {
   const identifier = normalizedPresetKey(raw);
   return { id:'preset:'+identifier, category:'preset', label:PRESET_LABELS[identifier] || '预设 · '+String(raw).trim() };
 }
-export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},resourceMigrationBackup:{},legacyWorldMergeDone:false,globalWorldGroupsEnabled:false }; }
+export function createEmptyState() { return { schemaVersion:3,enabled:false,autoGroup:true,resources:{},worldMigrationBackup:{},resourceMigrationBackup:{},legacyWorldMergeDone:false,globalWorldGroupsEnabled:false,parameterFoldEnabled:false,promptFoldersEnabled:false,promptFolders:{} }; }
 export function normalizeState(input) {
   const state=createEmptyState();
   if (!input || typeof input!=='object') return state;
@@ -39,6 +39,7 @@ export function normalizeState(input) {
   state.autoGroup=input.autoGroup!==false;
   state.globalWorldGroupsEnabled=input.globalWorldGroupsEnabled===true;
   state.parameterFoldEnabled=input.parameterFoldEnabled===true;
+  state.promptFoldersEnabled=input.promptFoldersEnabled===true;
   state.legacyWorldMergeDone=input.legacyWorldMergeDone===true;
   if (input.resources && typeof input.resources==='object' && !Array.isArray(input.resources)) {
     for (const [id, raw] of Object.entries(input.resources).slice(0,100)) {
@@ -74,6 +75,25 @@ export function normalizeState(input) {
           Object.entries(raw).filter(([key,val])=>
             typeof val==='string' && key.length<=512 && val.length<=56).slice(0,3000));
       }
+    }
+  }
+  const rawPromptFolders=input.promptFolders;
+  if(rawPromptFolders && typeof rawPromptFolders==='object' && !Array.isArray(rawPromptFolders)){
+    for(const [name,raw] of Object.entries(rawPromptFolders).slice(0,150)){
+      if(!name.trim() || name.length>200 || !raw || typeof raw!=='object')continue;
+      const groups=[],seen=new Set();
+      for(const g of (Array.isArray(raw.groups)?raw.groups:[]).slice(0,200)){
+        const id=String(g?.id??'').slice(0,80),title=String(g?.name??'').trim().slice(0,50);
+        if(!id||!title||seen.has(id))continue;
+        seen.add(id);groups.push({id,name:title});
+      }
+      const entries={};
+      if(raw.entries && typeof raw.entries==='object' && !Array.isArray(raw.entries)){
+        for(const [id,groupId] of Object.entries(raw.entries).slice(0,5000)){
+          if(id.length<=300 && typeof groupId==='string' && seen.has(groupId))entries[id]=groupId;
+        }
+      }
+      state.promptFolders[name]={groups,entries};
     }
   }
   const oldResourceBackups=input.resourceMigrationBackup;

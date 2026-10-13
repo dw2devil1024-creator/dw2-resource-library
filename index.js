@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.16-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.17-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -9,6 +9,7 @@ import {
 } from './resource-core.js';
 import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
+import {createPromptFolders} from './preset-prompt-folders.js';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -18,7 +19,7 @@ const MANAGER_ID='dw2rl-manager';
 const sourceMap=new Map();
 const adapters=new Map();
 let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
-let globalWorldGrouping=null,parameterFold=null;
+let globalWorldGrouping=null,parameterFold=null,promptFolders=null;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
 let category='preset', query='', managerQuery='', openedGroup='', settingsReady=false;
@@ -208,6 +209,7 @@ function scan(){
   }
   ensureGlobalWorldGroups();
   parameterFold?.sync();
+  promptFolders?.sync();
 }
 function scheduleScan(){
   if(!alive||!state.enabled||scanTimer)return;
@@ -715,6 +717,15 @@ function mountSettings(){
   });
   foldRow.append(foldCheck,el('span','','预设高级参数区折叠'));
   body.append(foldRow);
+  const promptRow=el('label','toggle-row');
+  const promptCheck=el('input');promptCheck.type='checkbox';
+  promptCheck.id='dw2rl-prompt-folders-enabled';promptCheck.checked=state.promptFoldersEnabled;
+  promptCheck.addEventListener('change',()=>{
+    state.promptFoldersEnabled=promptCheck.checked;saveData();
+    if(state.promptFoldersEnabled)promptFolders?.sync();else promptFolders?.disable();
+  });
+  promptRow.append(promptCheck,el('span','','预设内部提示词分组（基础测试版）'));
+  body.append(promptRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
   actions.append(
@@ -755,12 +766,21 @@ function onDOMChange(records){
     if(shouldMount&&shouldScan)break;
   }
   if(shouldScan)scheduleScan();
+  if(alive&&state.promptFoldersEnabled&&records.some(record=>[...record.addedNodes].some(node=>
+    node.nodeType===1 && (node.matches?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt') ||
+      node.querySelector?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt')))))promptFolders?.sync();
   if(alive && state.parameterFoldEnabled && records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1&&(n.id==='range_block_openai'||n.querySelector?.('#range_block_openai'))))) parameterFold?.sync();
   if(shouldMount)queueMicrotask(()=>{if(alive){mountMenu();mountSettings()}});
 }
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
+  promptFolders=createPromptFolders({
+    enabled:()=>alive&&state.promptFoldersEnabled,
+    getState:()=>state,
+    save:()=>saveData(),
+    context:nativeContext
+  });
   parameterFold=createPresetParameterFold();
   parameterFold.configure(state.parameterFoldEnabled);
   globalWorldGrouping=createGlobalWorldGrouping({
@@ -782,7 +802,7 @@ function start(){
   watcher=new MutationObserver(onDOMChange);watcher.observe(document.body,{childList:true,subtree:true});
   if(state.enabled)scan();
   // Some TT pages construct select widgets after initial DOM load.
-  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync()}},1200);
+  delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync();promptFolders?.sync()}},1200);
   globalThis.DW2ResourceLibrary={open:openManager,enable:()=>setEnabled(true),disable:()=>setEnabled(false),version:VERSION};
 }
 export function onEnable(){
@@ -802,6 +822,7 @@ export function onDisable(){
   if(delayedTimer)clearTimeout(delayedTimer);delayedTimer=0;
   watcher?.disconnect();watcher=null;
   for(const off of listeners.splice(0))off();
+  promptFolders?.disable();promptFolders=null;
   globalWorldGrouping?.disable();globalWorldGrouping=null;
   parameterFold?.disable();parameterFold=null;
   deactivateSelectors();closeManager();

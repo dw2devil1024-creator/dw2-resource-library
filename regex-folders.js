@@ -2,7 +2,7 @@
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();
+ const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -81,36 +81,60 @@ export function createRegexFolders({enabled,getState,save,context}){
     // Crucial on iOS: NEVER remove and recreate an open native select.
     // TT and the extension refresh settings on timers; replacing the focused
     // select in draw() dismisses the OS dropdown immediately.
-    let selector=row.querySelector(':scope > .dw2rl-regex-assign');
-    if(!selector){
-      selector=node('select','dw2rl-regex-assign text_pole');
-      selector.setAttribute('aria-label','移动正则到文件夹');
-      selector.title='移动到文件夹';
-      selector.addEventListener('pointerdown',e=>e.stopPropagation());
-      selector.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
-      selector.addEventListener('mousedown',e=>e.stopPropagation());
-      selector.addEventListener('click',e=>e.stopPropagation());
-      selector.addEventListener('change',()=>{
-        const scopeIdentity=selector.dataset.scopeKey;
+    // Custom theme-native dropdown. No iOS native select popup.
+    // Maintain one stable button per regex to avoid focus loss on refresh.
+    let picker=row.querySelector(':scope > .dw2rl-regex-picker');
+    if(!picker){
+      picker=btn('未分组 ▾',()=>{
+        folderMenu?.remove();folderMenu=null;
+        const scopeIdentity=picker.dataset.scopeKey;
         const current=record(scopeIdentity);
-        if(selector.value)current.entries[row.id]=selector.value;
-        else delete current.entries[row.id];
-        save();schedule();
-      });
-      row.append(selector);
+        const menu=node('div','dw2rl-regex-picker-menu');
+        menu.setAttribute('role','menu');
+        const choices=[{id:'',name:'未分组'},...current.groups];
+        for(const choice of choices){
+          const selected=(current.entries[row.id]||'')===choice.id;
+          const item=btn((selected?'✓  ':'   ')+choice.name,()=>{
+            if(choice.id)current.entries[row.id]=choice.id;
+            else delete current.entries[row.id];
+            folderMenu?.remove();folderMenu=null;
+            save();schedule();
+          },'dw2rl-regex-picker-item');
+          item.setAttribute('role','menuitemradio');
+          item.setAttribute('aria-checked',String(selected));
+          menu.append(item);
+        }
+        // Mount to regex settings so TT doesn't mistake it for outside tap.
+        const settings=document.querySelector('#regex_container');
+        if(!settings)return;
+        settings.append(menu);folderMenu=menu;
+        const rect=picker.getBoundingClientRect();
+        const bounds=settings.getBoundingClientRect();
+        const width=Math.min(Math.max(180,rect.width),Math.max(180,window.innerWidth-24));
+        const left=Math.min(Math.max(8,rect.left),Math.max(8,window.innerWidth-width-8));
+        const availableBelow=window.innerHeight-rect.bottom;
+        const openAbove=availableBelow<180&&rect.top>availableBelow;
+        menu.style.position='fixed';menu.style.width=width+'px';
+        menu.style.left=left+'px';
+        menu.style.top=(openAbove?'auto':Math.min(rect.bottom+5,window.innerHeight-80)+'px');
+        if(openAbove)menu.style.bottom=(window.innerHeight-rect.top+5)+'px';
+        const stop=e=>e.stopPropagation();
+        for(const type of ['pointerdown','touchstart','mousedown','click'])menu.addEventListener(type,stop);
+        const dismiss=e=>{
+          if(!menu.isConnected){document.removeEventListener('pointerdown',dismiss,true);return;}
+          if(menu.contains(e.target)||picker.contains(e.target))return;
+          menu.remove();if(folderMenu===menu)folderMenu=null;
+          document.removeEventListener('pointerdown',dismiss,true);
+        };
+        // Delay binding to avoid closing from the initial opening pointer.
+        setTimeout(()=>document.addEventListener('pointerdown',dismiss,true),0);
+      },'dw2rl-regex-picker menu_button');
+      picker.setAttribute('aria-label','选择正则文件夹');
+      picker.setAttribute('aria-haspopup','menu');
+      row.append(picker);
     }
-    const signature=r.groups.map(g=>g.id+'='+g.name).join('|');
-    // Preserve active options while the user is interacting with the menu.
-    if(selector.dataset.optionsSignature!==signature){
-      const selected=gid;
-      selector.replaceChildren();
-      const loose=node('option','','未分组');loose.value='';selector.append(loose);
-      for(const g of r.groups){const opt=node('option','',g.name);opt.value=g.id;selector.append(opt);}
-      selector.dataset.optionsSignature=signature;
-      selector.value=selected;
-    }
-    selector.dataset.scopeKey=key;
-    if(document.activeElement!==selector && selector.value!==gid)selector.value=gid;
+    picker.dataset.scopeKey=key;
+    picker.textContent=(validGroups.get(gid)||'未分组')+'  ▾';
     if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');}
     if(gid&&collapsed.get(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
     last=gid;
@@ -123,9 +147,9 @@ export function createRegexFolders({enabled,getState,save,context}){
   }
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(()=>{timer=0;sync();},90);}
- function disable(){clearTimeout(timer);timer=0;dialog?.remove();dialog=null;for(const root of mounted){
+ function disable(){clearTimeout(timer);timer=0;dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;for(const root of mounted){
    clear(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
-   for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-assign')?.remove();
+   for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-picker')?.remove();
   }mounted.clear();}
  return {sync:schedule,disable};
 }

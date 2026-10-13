@@ -303,3 +303,23 @@ assert.equal(migrateNamedResourceAssignments(themeNamed,'theme',mkNamedSelect('t
 assert.equal(themeRecordNamed.assignments[themeResourceKey('秋日')],'warm');
 assert.equal(groupOptions(mkNamedSelect('themes',[['雪夜','雪夜'],['秋日','秋日']]),themeRecordNamed,true).find(g=>g.name==='暖色').items[0].label,'秋日');
 console.log('DW2 Resource Library: stable preset and theme identities and legacy ambiguity guard passed');
+
+// Optional global world folders share editor classification but never alter
+// the original numeric selector values or global enable/disable state.
+const globalState=createEmptyState();
+assert.equal(globalState.globalWorldGroupsEnabled,false);
+const restoredGlobal=normalizeState({...globalState,globalWorldGroupsEnabled:true});
+assert.equal(restoredGlobal.globalWorldGroupsEnabled,true);
+const editorGroups=ensureResource(restoredGlobal,'world:editor');
+editorGroups.groups=[{id:'gu',name:'顾星灼'},{id:'barry',name:'贝瑞旻'}];
+editorGroups.assignments={[worldBookKey('顾星灼世界书')]:'gu',[worldBookKey('贝瑞旻世界书')]:'barry'};
+const globalSelect=optionsForSelect({
+  id:'world_info',options:[
+    {textContent:'顾星灼世界书',value:'0',selected:true,disabled:false},
+    {textContent:'贝瑞旻世界书',value:'1',selected:false,disabled:false}
+  ]
+});
+assert.equal(groupOptions(globalSelect,editorGroups,true).find(g=>g.name==='顾星灼').items[0].label,'顾星灼世界书');
+assert.equal(groupOptions(globalSelect,editorGroups,true).find(g=>g.name==='贝瑞旻').items[0].label,'贝瑞旻世界书');
+assert.deepEqual(globalSelect.map(item=>[item.value,item.selected]),[['0',true],['1',false]]);
+console.log('DW2 Resource Library: global world folders share editor mapping without touching activation');

@@ -787,7 +787,7 @@ function onDOMChange(records){
 function start(){
   if(alive)return;
   alive=true;warnedAboutLegacyWorlds=false;warnedAboutLegacyResources.clear();loadData();mergeWorldBookFolders();
-  regexFolders=createRegexFolders({enabled:()=>alive&&state.regexFoldersEnabled,getState:()=>state,save:()=>saveData()});
+  regexFolders=createRegexFolders({enabled:()=>alive&&state.regexFoldersEnabled,getState:()=>state,save:()=>saveData(),context:nativeContext});
   promptFolders=createPromptFolders({
     enabled:()=>alive&&state.promptFoldersEnabled,
     getState:()=>state,

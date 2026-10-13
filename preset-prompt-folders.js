@@ -95,18 +95,19 @@ export function createPromptFolders({enabled,getState,save,context}){
       const groupId=names.has(effective.entries[id])?effective.entries[id]:'';
       const current=groupId||'__loose__';
       if(current!==previous){
-        const header=el('button','dw2rl-inline-folder');
-        header.type='button';
-        header.textContent=(expandedGroup(current)?'▾ ':'▸ ')+(names.get(groupId)||'未分组');
-        header.setAttribute('aria-expanded',String(expandedGroup(current)));
+        const header=el('div','dw2rl-inline-folder');
         header.dataset.groupId=current;
-        header.addEventListener('mousedown',e=>{e.stopPropagation();});
-        header.addEventListener('touchstart',e=>{e.stopPropagation();},{passive:true});
-        header.addEventListener('click',e=>{
-          e.preventDefault();e.stopPropagation();
-          folderCollapsed.set(current,!folderCollapsed.get(current));
-          render();
-        });
+        const toggle=btn((expandedGroup(current)?'▾ ':'▸ ')+(names.get(groupId)||'未分组'),()=>{
+          folderCollapsed.set(current,!folderCollapsed.get(current));render();
+        },'dw2rl-inline-folder-toggle');
+        toggle.setAttribute('aria-expanded',String(expandedGroup(current)));
+        header.addEventListener('mousedown',e=>e.stopPropagation());
+        header.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
+        header.append(toggle);
+        if(groupId){
+          header.append(btn('✎',()=>changeGroup(groupId),'dw2rl-folder-edit'));
+          header.append(btn('×',()=>removeGroup(groupId),'dw2rl-folder-remove'));
+        }
         row.prepend(header);
         row.classList.add('dw2rl-inline-folder-host');
         runIndex++;
@@ -126,7 +127,25 @@ export function createPromptFolders({enabled,getState,save,context}){
   function expandedGroup(key){return folderCollapsed.get(key)!==true;}
   function saveRecord(){save();render();}
 
-  function makeGroup(){ selecting=!selecting;first='';folderCollapsed.clear();render(); }
+  function changeGroup(id){
+    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);
+    if(!group)return;
+    const name=prompt('修改文件夹名称',group.name);
+    if(name===null||!safe(name))return;
+    const title=safe(name).slice(0,50);
+    if(rec.groups.some(g=>g.id!==id&&g.name===title))return alert('已有同名分组');
+    if(!pending){pending={groups:rec.groups.map(g=>({...g})),entries:{...rec.entries}};}
+    pending.groups.find(g=>g.id===id).name=title;render();
+  }
+  function removeGroup(id){
+    const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);
+    if(!group||!confirm('删除「'+group.name+'」文件夹？里面的提示词会变成未分组，不会被删除。'))return;
+    if(!pending){pending={groups:rec.groups.map(g=>({...g})),entries:{...rec.entries}};}
+    pending.groups=pending.groups.filter(g=>g.id!==id);
+    for(const [key,gid] of Object.entries(pending.entries))if(gid===id)delete pending.entries[key];
+    folderCollapsed.delete(id);render();
+  }
+    function makeGroup(){ selecting=!selecting;first='';folderCollapsed.clear();render(); }
   function tapRange(id){
     const ids=records().map(r=>safe(r.dataset.pmIdentifier));
     if(!first){first=id;render();return;}

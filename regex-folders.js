@@ -2,7 +2,7 @@
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let frame=0;
+ const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -21,6 +21,20 @@ export function createRegexFolders({enabled,getState,save,context}){
    return state.regexFolders[scope];
  }
  function nativeRows(root){return [...root.children].filter(x=>x.classList?.contains('regex-script-label')&&x.id);}
+ function refreshCounts(root,rows,data){
+  const stats=new Map();
+  for(const row of rows){
+   const gid=data.entries[row.id];if(!gid)continue;
+   const stat=stats.get(gid)||{on:0,total:0};
+   stat.total++;if(row.querySelector('input.disable_regex')?.checked===false)stat.on++;
+   stats.set(gid,stat);
+  }
+  for(const header of root.querySelectorAll(':scope > .dw2rl-regex-header')){
+   const stat=stats.get(header.dataset.groupId)||{on:0,total:0};
+   const count=header.querySelector('.dw2rl-regex-count'),value='('+stat.on+'/'+stat.total+')';
+   if(count&&count.textContent!==value)count.textContent=value;
+  }
+ }
  function clear(root){
    root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline').forEach(x=>x.remove());
    for(const row of nativeRows(root))row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
@@ -46,18 +60,14 @@ export function createRegexFolders({enabled,getState,save,context}){
   const r=record(key),validGroups=new Map(r.groups.map(g=>[g.id,g.name]));
   const signature=key+'|'+r.groups.map(g=>g.id+':'+g.name).join('~')+'|'+rows.map(row=>row.id+':'+(r.entries[row.id]||'')).join('~');
   const old=snapshots.get(root);
-  // The normal 1.2s TT scan must not tear down headers or the frame.
-  // Reuse them while original native rows and membership remain unchanged.
-  if(old?.signature===signature && old.rows.length===rows.length && rows.every((row,i)=>row===old.rows[i])){
-    const headers=[...root.querySelectorAll(':scope > .dw2rl-regex-header')];
-    for(const h of headers){
-      const groupId=h.dataset.groupId;
-      const members=rows.filter(row=>r.entries[row.id]===groupId);
-      const on=members.filter(row=>row.querySelector('input.disable_regex')?.checked===false).length;
-      const count=h.querySelector('.dw2rl-regex-count');
-      if(count)count.textContent='('+on+'/'+members.length+')';
-    }
-    requestOutline(root);return;
+  // Skip rebuilding only if TT still has our exact headers and native rows.
+  if(old?.signature===signature && old.rows.length===rows.length &&
+     rows.every((row,i)=>row===old.rows[i]) &&
+     old.runs.every(run=>run.header.parentElement===root &&
+       run.outline.parentElement===root && run.header.nextElementSibling===run.first)){
+    refreshCounts(root,rows,r);
+    updateOutlines(root);
+    return;
   }
   clear(root);
   let toolbar=root.previousElementSibling;
@@ -175,52 +185,87 @@ export function createRegexFolders({enabled,getState,save,context}){
     last=gid;
   });
   for(const run of runs){
-    const outline=node('div','dw2rl-regex-outline');
-    outline.dataset.folderKey=run.key;
-    root.append(outline);
-    outline._dw2rlHeader=run.header;
-    outline._dw2rlLast=run.last;
+   const outline=node('div','dw2rl-regex-outline');
+   outline.dataset.folderKey=run.key;
+   root.append(outline);
+   outline._dw2rlHeader=run.header;
+   outline._dw2rlLast=run.last;
+   run.outline=outline;
   }
-  snapshots.set(root,{signature,rows:[...rows]});
+  snapshots.set(root,{signature,rows:[...rows],runs,key});
   ensureObserver(root);
-  requestOutline(root);
- }
- function requestOutline(root){
-   if(frame)cancelAnimationFrame(frame);
-   frame=requestAnimationFrame(()=>{frame=0;if(root.isConnected)updateOutlines(root);});
+  updateOutlines(root); // same DOM turn, never a frame later
  }
  function ensureObserver(root){
-   if(observers.has(root))return;
-   const resize=new ResizeObserver(()=>requestOutline(root));
-   resize.observe(root);
-   observers.set(root,resize);
+  if(observers.has(root))return;
+  const resize=new ResizeObserver(()=>{if(root.isConnected)updateOutlines(root);});
+  resize.observe(root);observers.set(root,resize);
  }
-  function updateOutlines(root){
-   const base=root.getBoundingClientRect();
-   for(const outline of root.querySelectorAll(':scope > .dw2rl-regex-outline')){
-     const header=outline._dw2rlHeader,last=outline._dw2rlLast;
-     if(!header?.isConnected || !last?.isConnected){outline.remove();continue;}
-     const collapsedNow=header.dataset.collapsed==='true';
-     const firstRect=header.getBoundingClientRect();
-     const lastRect=collapsedNow?firstRect:last.getBoundingClientRect();
-     const top=firstRect.top-base.top+root.scrollTop;
-     const left=firstRect.left-base.left+root.scrollLeft;
-     outline.style.top=top+'px';
-     outline.style.left=left+'px';
-     outline.style.width=firstRect.width+'px';
-     outline.style.height=Math.max(0,lastRect.bottom-firstRect.top)+'px';
-   }
+ function updateOutlines(root){
+  const base=root.getBoundingClientRect();
+  const outlines=root.querySelectorAll(':scope > .dw2rl-regex-outline');
+  if(base.width<=0||base.height<=0){
+   for(const outline of outlines)outline.style.visibility='hidden';
+   return;
+  }
+  for(const outline of outlines){
+   const header=outline._dw2rlHeader,last=outline._dw2rlLast;
+   if(!header?.isConnected||!last?.isConnected){outline.remove();continue;}
+   const first=header.getBoundingClientRect();
+   const lastRect=header.dataset.collapsed==='true'?first:last.getBoundingClientRect();
+   if(first.width<=0){outline.style.visibility='hidden';continue;}
+   const coords={
+    top:(first.top-base.top+root.scrollTop)+'px',
+    left:(first.left-base.left+root.scrollLeft)+'px',
+    width:first.width+'px',
+    height:Math.max(0,lastRect.bottom-first.top)+'px'
+   };
+   for(const [k,v] of Object.entries(coords))if(outline.style[k]!==v)outline.style[k]=v;
+   outline.style.visibility='visible';
+  }
+ }
+ function onRegexChange(event){
+  if(!enabled()||!event.target?.matches?.('input.disable_regex'))return;
+  const root=event.target.closest('.regex-script-container');
+  if(!root||!mounted.has(root))return;
+  queueMicrotask(()=>{
+   if(!enabled()||!root.isConnected)return;
+   const old=snapshots.get(root);if(!old)return;
+   const rows=nativeRows(root);
+   if(rows.length!==old.rows.length||rows.some((row,i)=>row!==old.rows[i])){sync();return;}
+   refreshCounts(root,rows,record(old.key));
+  });
  }
  function sync(){
   if(!enabled())return disable();
+  if(!listening){document.addEventListener('change',onRegexChange);listening=true;}
+  const live=new Set();
   for(const [scope,selector] of CONTAINERS){
-   const root=document.querySelector(selector);if(root){mounted.add(root);draw(scope,root);}
+   const root=document.querySelector(selector);
+   if(root){live.add(root);mounted.add(root);draw(scope,root);}
+  }
+  for(const root of mounted){
+   if(live.has(root))continue;
+   observers.get(root)?.disconnect();observers.delete(root);
+   snapshots.delete(root);mounted.delete(root);
   }
  }
- function schedule(){clearTimeout(timer);timer=setTimeout(()=>{timer=0;sync();},90);}
- function disable(){clearTimeout(timer);timer=0;if(frame)cancelAnimationFrame(frame);frame=0;for(const resize of observers.values())resize.disconnect();observers.clear();dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;for(const root of mounted){
-   clear(root);snapshots.delete(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
+ function schedule(){
+  const token=++refreshToken;
+  queueMicrotask(()=>{if(token===refreshToken)sync();});
+ }
+ function disable(){
+  refreshToken++;
+  if(listening){document.removeEventListener('change',onRegexChange);listening=false;}
+  for(const resize of observers.values())resize.disconnect();
+  observers.clear();
+  dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;
+  for(const root of mounted){
+   clear(root);snapshots.delete(root);
+   root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
    for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-picker')?.remove();
-  }mounted.clear();}
- return {sync:schedule,disable};
+  }
+  mounted.clear();
+ }
+ return {sync,disable};
 }

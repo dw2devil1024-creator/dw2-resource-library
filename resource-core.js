@@ -110,7 +110,7 @@ export function normalizeState(input) {
           if(id.length<=300 && typeof groupId==='string' && seen.has(groupId))entries[id]=groupId;
         }
       }
-      state.promptFolders[name]={groups,entries};
+      state.promptFolders[name]={groups,entries,embeddedImportHandled:raw.embeddedImportHandled===true};
     }
   }
   const oldResourceBackups=input.resourceMigrationBackup;

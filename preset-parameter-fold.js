@@ -37,7 +37,7 @@ export function createPresetParameterFold(){
     // walk its direct children, ending strictly before the prompt container.
     const actualPromptWrapper=prompt.closest('.range-block');
     if(!actualPromptWrapper || actualPromptWrapper.parentElement!==parent)return [];
-    return [...parent.children].filter(el=>el!==actualPromptWrapper && !el.contains(actualPromptWrapper));
+    return [...parent.children].slice(0,[...parent.children].indexOf(actualPromptWrapper));
   }
   function sync(){
     const block=document.getElementById(BLOCK_ID);

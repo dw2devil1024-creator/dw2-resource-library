@@ -69,7 +69,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     const n=doc().createElement(tag);n.className=cls;n.textContent=label;return n;
   }
   function btn(label,run,cls=''){
-    const b=el('button',cls,label);b.type='button';b.addEventListener('click',run);return b;
+    const b=el('button',cls,label);b.type='button';b.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();run(event);});return b;
   }
   // Inline fold headings live INSIDE an existing prompt row, so the
   // sortable list keeps exactly the same <li> nodes and identifiers.
@@ -130,13 +130,22 @@ export function createPromptFolders({enabled,getState,save,context}){
     const ok=el('button','dw2rl-prompt-dialog-submit',confirmLabel);ok.type='submit';
     if(danger)ok.classList.add('dw2rl-danger');
     actions.append(cancel,ok);box.append(heading);if(!danger)box.append(input);box.append(actions);
-    backdrop.append(box);doc().body.append(backdrop);dialog=backdrop;
+    backdrop.append(box);
+    // Keep the modal inside TT's settings drawer. Appending to body causes
+    // mobile panel outside-click handlers to treat EVERY modal action as a
+    // navigation-away gesture and close the entire settings panel.
+    const anchor=doc().getElementById('completion_prompt_manager');
+    if(!anchor?.isConnected)return;
+    anchor.append(backdrop);dialog=backdrop;
+    for(const type of ['pointerdown','pointerup','touchstart','touchend','mousedown','mouseup','click']){
+      backdrop.addEventListener(type,event=>event.stopPropagation());
+    }
     box.addEventListener('submit',ev=>{
-      ev.preventDefault();const value=safe(input.value).slice(0,50);
+      ev.preventDefault();ev.stopPropagation();const value=safe(input.value).slice(0,50);
       if(!danger&&!value){input.focus();return;}
       if(onSubmit(value)!==false){backdrop.remove();dialog=null;}
     });
-    backdrop.addEventListener('click',ev=>{if(ev.target===backdrop){backdrop.remove();dialog=null;}});
+    backdrop.addEventListener('click',ev=>{if(ev.target===backdrop){ev.preventDefault();backdrop.remove();dialog=null;}});
     if(!danger)setTimeout(()=>input.focus(),60);
   }
   function getDraft(){
@@ -196,7 +205,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     host=list;
     toolbar.replaceChildren();
     const title=el('div',PREFIX+'-head','提示词分组');
-    title.append(el('small','',currentLegacy?' · 已检测旧分组记录':' · 不改变执行顺序'));
+    title.append(el('small','',currentLegacy?' · 旧分组已恢复':' · 按顺序整理'));
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
     actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup));
@@ -206,7 +215,10 @@ export function createPromptFolders({enabled,getState,save,context}){
     // Keep management actions separate from their presentation.
     showRows(rows,rec);
     const total=rows.length;
-    toolbar.append(el('div',PREFIX+'-hint',selecting?(first?'已选起点，请点击终点，系统会自动包含中间条目':'请点击任意提示词的「选取」作为起点'):(pending?'已创建分组，点击「保存分组」确认':'文件夹直接在下方列表内展开/收起 · '+total+' 条')));
+    const message=selecting
+      ?(first?'已选起点，请选择最后一条；中间条目自动纳入。':'请选择分组的第一条和最后一条。')
+      :(pending?'分组尚未保存，请点击「保存分组」。':'共 '+total+' 条 · 文件夹直接在下方展开或收起');
+    toolbar.append(el('div',PREFIX+'-hint',message));
 
   }
   function schedule(){

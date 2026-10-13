@@ -478,11 +478,30 @@ select.dw2rl-native-hidden {
   padding:7px 9px!important;background:rgba(150,133,121,.10)!important;
   border:1px solid rgba(186,170,159,.22)!important;border-radius:7px!important;
   box-shadow:none!important;text-align:left!important;
-  font-family:inherit!important;font-size:12px!important;font-weight:600!important;
-  color:var(--SmartThemeBodyColor,inherit)!important;line-height:1.45!important;
+  font-family:'Noto Serif SC','Source Han Serif SC','Songti SC',serif!important;
+  font-size:12px!important;font-weight:400!important;letter-spacing:.01em!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;line-height:1.55!important;
   cursor:pointer!important;touch-action:manipulation!important;
 }
 .select2-results__options > li.dw2rl-global-heading > button.dw2rl-global-folder-toggle:focus-visible{
   outline:2px solid var(--SmartThemeQuoteColor,#d2beb7)!important;outline-offset:2px!important;
 }
 .select2-results__options > li.dw2rl-global-row-collapsed{display:none!important}
+
+/* v0.1.13 · Match Resource Library's editor popover typography in TT's
+   original global-world Select2 results (folders and option names only). */
+#select2-world_info-results,
+#select2-world_info-results > li.select2-results__option,
+#select2-world_info-results > li.dw2rl-global-heading,
+#select2-world_info-results > li.dw2rl-global-heading > button.dw2rl-global-folder-toggle {
+  font-family:'Noto Serif SC','Source Han Serif SC','Songti SC',serif!important;
+}
+#select2-world_info-results > li.select2-results__option:not(.dw2rl-global-heading){
+  font-size:11px!important;
+  font-weight:400!important;
+  line-height:1.55!important;
+}
+#select2-world_info-results > li.dw2rl-global-heading > button.dw2rl-global-folder-toggle{
+  font-size:12px!important;
+  font-weight:400!important;
+}

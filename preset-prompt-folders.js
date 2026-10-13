@@ -294,5 +294,5 @@ export function createPromptFolders({enabled,getState,save,context}){
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
   }
-  return {sync:schedule,prepare,disable};
+  return {sync:schedule,prepare,disable,getSelectedPresetName:presetName};
 }

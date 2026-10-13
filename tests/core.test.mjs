@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments,migrateNamedResourceAssignments,presetResourceKey,themeResourceKey,migrateLegacyWorldFolders,suppressAutoGroup,unsuppressAutoGroup} from '../resource-core.js';
+import {normalizeLegacyGroups} from '../preset-prompt-folders.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -303,3 +304,17 @@ assert.equal(migrateNamedResourceAssignments(themeNamed,'theme',mkNamedSelect('t
 assert.equal(themeRecordNamed.assignments[themeResourceKey('秋日')],'warm');
 assert.equal(groupOptions(mkNamedSelect('themes',[['雪夜','雪夜'],['秋日','秋日']]),themeRecordNamed,true).find(g=>g.name==='暖色').items[0].label,'秋日');
 console.log('DW2 Resource Library: stable preset and theme identities and legacy ambiguity guard passed');
+
+const oldState={
+  groups:[{id:'core',name:'核心规则',order:0},{id:'style',name:'文风系统',order:1}],
+  prompts:{a:{groupId:'core'},b:{groupId:'style'},c:{groupId:'missing'},lost:{groupId:'core'}}
+};
+const valid=new Set(['a','b','c']);
+const migrated=normalizeLegacyGroups(oldState,valid);
+assert.deepEqual(migrated.groups.map(x=>x.name),['核心规则','文风系统']);
+assert.deepEqual(migrated.entries,{a:'core',b:'style'});
+assert.equal(normalizeLegacyGroups({},valid),null);
+const promptFolderState=normalizeState({promptFoldersEnabled:true,promptFolders:{'织界 V659':{groups:[{id:'core',name:'核心规则'}],entries:{a:'core',b:'missing'}}}});
+assert.equal(promptFolderState.promptFoldersEnabled,true);
+assert.deepEqual(promptFolderState.promptFolders['织界 V659'].entries,{a:'core'});
+console.log('DW2 Resource Library: legacy read-only prompt groups and persisted folder identities passed');

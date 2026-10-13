@@ -725,6 +725,7 @@ function mountSettings(){
   promptCheck.addEventListener('change',()=>{
     state.promptFoldersEnabled=promptCheck.checked;saveData();
     if(state.promptFoldersEnabled)promptFolders?.sync();else promptFolders?.disable();
+    window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
   });
   promptRow.append(promptCheck,el('span','','预设内部提示词分组（基础测试版）'));
   body.append(promptRow);
@@ -791,7 +792,11 @@ function start(){
   promptFolders=createPromptFolders({
     enabled:()=>alive&&state.promptFoldersEnabled,
     getState:()=>state,
-    save:()=>saveData(),
+    save:()=>{
+      saveData();
+      // Notify the floating preset console immediately after a folder edit.
+      window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
+    },
     context:nativeContext
   });
   parameterFold=createPresetParameterFold();
@@ -816,7 +821,23 @@ function start(){
   if(state.enabled)scan();
   // Some TT pages construct select widgets after initial DOM load.
   delayedTimer=setTimeout(()=>{delayedTimer=0;if(alive){mountSettings();mountMenu();if(state.enabled)scan();parameterFold?.sync();promptFolders?.sync();regexFolders?.sync()}},1200);
-  globalThis.DW2ResourceLibrary={open:openManager,enable:()=>setEnabled(true),disable:()=>setEnabled(false),version:VERSION};
+  globalThis.DW2ResourceLibrary={
+    open:openManager,enable:()=>setEnabled(true),disable:()=>setEnabled(false),version:VERSION,
+    // Read-only live snapshot. The main TT panel uses this exact normalized
+    // state; the floating console must not depend on a later settings save.
+    getPromptFolderSnapshot:()=>{
+      if(!alive)return null;
+      const presetName=promptFolders?.getSelectedPresetName?.()||'';
+      const record=presetName?state.promptFolders?.[presetName]:null;
+      return {
+        enabled:state.promptFoldersEnabled===true,
+        presetName,
+        groups:Array.isArray(record?.groups)?record.groups.map(g=>({id:g.id,name:g.name})):[],
+        entries:{...(record?.entries||{})}
+      };
+    }
+  };
+  window.dispatchEvent(new Event('dw2rl-prompt-folders-ready'));
 }
 export function onEnable(){
   if(startPromise)return startPromise;
@@ -843,6 +864,7 @@ export function onDisable(){
   document.getElementById(MENU_ID)?.remove();
   document.getElementById(SETTINGS_ID)?.remove();settingsRoot=null;settingsReady=false;
   if(globalThis.DW2ResourceLibrary?.version===VERSION)delete globalThis.DW2ResourceLibrary;
+  window.dispatchEvent(new Event('dw2rl-prompt-folders-ready'));
   startPromise=null;
 }
 if(globalThis.SillyTavern?.getContext)onEnable();

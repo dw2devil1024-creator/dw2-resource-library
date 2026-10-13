@@ -665,7 +665,7 @@ select.dw2rl-native-hidden {
 #completion_prompt_manager_list > li.dw2rl-prompt-range-start{
   outline:1px solid var(--SmartThemeQuoteColor,rgba(190,175,175,.5))!important;
 }
-body > .dw2rl-prompt-dialog-backdrop{
+#completion_prompt_manager > .dw2rl-prompt-dialog-backdrop{
   position:fixed!important;inset:0!important;z-index:2147483420!important;
   display:flex!important;align-items:center;justify-content:center;
   padding:16px!important;background:rgba(0,0,0,.50)!important;
@@ -702,4 +702,38 @@ body > .dw2rl-prompt-dialog-backdrop{
   background:transparent!important;color:inherit!important;
   font-family:inherit!important;box-shadow:none!important;
   border:1px solid var(--SmartThemeBorderColor,rgba(180,180,180,.35))!important;
+}
+
+/* v0.1.21 · Compact layout, let TT's native menu_button carry theme styling. */
+#dw2rl-prompt-folders{
+  border:0!important;background:transparent!important;
+  padding:6px 3px 9px!important;margin:10px 0 12px!important;
+  font-family:inherit!important;color:inherit!important;
+}
+#dw2rl-prompt-folders-head{
+  display:flex!important;align-items:baseline!important;gap:9px!important;
+  margin-bottom:9px!important;font-family:inherit!important;
+}
+#dw2rl-prompt-folders-head small{font-size:10px!important;opacity:.65!important}
+#dw2rl-prompt-folders-actions{
+  display:flex!important;flex-wrap:wrap!important;gap:8px!important;
+  align-items:center!important;margin:0 0 8px!important;
+}
+#dw2rl-prompt-folders #dw2rl-prompt-folders-actions .menu_button{
+  display:inline-flex!important;align-items:center;justify-content:center;
+  min-height:31px!important;padding:5px 12px!important;
+  border:1px solid var(--SmartThemeBorderColor)!important;
+  border-radius:var(--border-radius-small,6px)!important;
+  color:var(--SmartThemeBodyColor)!important;
+  background:var(--SmartThemeBlurTintColor)!important;
+  font-family:inherit!important;font-size:12px!important;
+  line-height:1.5!important;opacity:1!important;
+  box-shadow:none!important;
+}
+#dw2rl-prompt-folders-hint{
+  margin:7px 0 3px!important;font-size:10px!important;
+  line-height:1.6!important;opacity:.62!important;
+}
+#completion_prompt_manager > .dw2rl-prompt-dialog-backdrop{
+  overscroll-behavior:contain!important;
 }

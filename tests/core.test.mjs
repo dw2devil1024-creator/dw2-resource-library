@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments,migrateLegacyWorldFolders,suppressAutoGroup,unsuppressAutoGroup} from '../resource-core.js';
+import {createEmptyState,normalizeState,sourceFromSelect,guessGroup,groupOptions,managerGroups,optionsForSelect,ensureResource,planSmartGroups,applySmartGroups,suggestedSeries,characterLinkedWorld,worldBookKey,assignmentKey,migrateWorldAssignments,migrateNamedResourceAssignments,presetResourceKey,themeResourceKey,migrateLegacyWorldFolders,suppressAutoGroup,unsuppressAutoGroup} from '../resource-core.js';
 const makeSelect=(id,preset=null)=>({tagName:'SELECT',id,getAttribute(name){return name==='data-preset-manager-for'?preset:null;}});
 assert.deepEqual(sourceFromSelect(makeSelect('themes')),{id:'theme',category:'theme',label:'美化主题'});
 assert.equal(sourceFromSelect(makeSelect('world_info')).id,'world:global');
@@ -267,3 +267,39 @@ const worldPreview=planSmartGroups(unclassifiedWorlds,{groups:[],assignments:{},
 assert.equal(worldPreview.total,2);
 assert.equal(worldPreview.remaining,0);
 console.log('DW2 Resource Library: explicit deletion/rename survives TT restarts and cannot be revived by legacy/global/auto grouping');
+
+// Preset/theme stable keys: deletion and reorder cannot silently steal a group.
+const mkNamedSelect=(id,rows)=>optionsForSelect({
+  id,tagName:'SELECT',
+  getAttribute(name){return name==='data-preset-manager-for' && id==='preset_selector' ? 'openai' : null;},
+  options:rows.map(([value,text])=>({value,textContent:text,selected:false,disabled:false}))
+});
+const testNamed=createEmptyState(),testPreset=ensureResource(testNamed,'preset:openai');
+testPreset.groups=[{id:'barry',name:'贝瑞旻'},{id:'gu',name:'顾星灼'},{id:'weave',name:'织界'}];
+testPreset.assignments={'0':'barry','1':'gu','2':'weave'};
+const beforePreset=mkNamedSelect('preset_selector',[['0','贝瑞旻'],['1','顾星灼'],['2','织界']]);
+let migratedNamed=migrateNamedResourceAssignments(testNamed,'preset:openai',beforePreset);
+assert.equal(migratedNamed.recovered,3);
+assert.equal(testPreset.assignments[presetResourceKey('顾星灼')],'gu');
+assert.equal(migrateNamedResourceAssignments(testNamed,'preset:openai',beforePreset).changed,false);
+const afterPreset=mkNamedSelect('preset_selector',[['0','顾星灼'],['1','织界']]);
+assert.equal(groupOptions(afterPreset,testPreset,true).find(g=>g.name==='顾星灼').items[0].label,'顾星灼');
+assert.equal(groupOptions(afterPreset,testPreset,true).find(g=>g.name==='织界').items[0].label,'织界');
+assert.equal(testNamed.resourceMigrationBackup['preset:openai']['1'],'gu');
+const uncertainNamed=createEmptyState(),uncertainPreset=ensureResource(uncertainNamed,'preset:openai');
+uncertainPreset.groups=[{id:'general',name:'角色专用'}];
+uncertainPreset.assignments={'1':'general'};
+migratedNamed=migrateNamedResourceAssignments(uncertainNamed,'preset:openai',afterPreset);
+assert.equal(migratedNamed.uncertain,1);
+assert.equal(uncertainPreset.assignments[presetResourceKey('织界')],undefined);
+assert.equal(uncertainNamed.resourceMigrationBackup['preset:openai']['1'],'general');
+const restartedNamed=normalizeState(JSON.parse(JSON.stringify(uncertainNamed)));
+assert.equal(restartedNamed.resourceMigrationBackup['preset:openai']['1'],'general');
+assert.equal(migrateNamedResourceAssignments(restartedNamed,'preset:openai',afterPreset).changed,false);
+const themeNamed=createEmptyState(),themeRecordNamed=ensureResource(themeNamed,'theme');
+themeRecordNamed.groups=[{id:'warm',name:'暖色'}];
+themeRecordNamed.assignments={'秋日':'warm'};
+assert.equal(migrateNamedResourceAssignments(themeNamed,'theme',mkNamedSelect('themes',[['秋日','秋日'],['雪夜','雪夜']])).recovered,1);
+assert.equal(themeRecordNamed.assignments[themeResourceKey('秋日')],'warm');
+assert.equal(groupOptions(mkNamedSelect('themes',[['雪夜','雪夜'],['秋日','秋日']]),themeRecordNamed,true).find(g=>g.name==='暖色').items[0].label,'秋日');
+console.log('DW2 Resource Library: stable preset and theme identities and legacy ambiguity guard passed');

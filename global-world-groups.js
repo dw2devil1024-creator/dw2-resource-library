@@ -164,6 +164,20 @@ export function createGlobalWorldGrouping({getGroups, onWarning=()=>{}}) {
     if(closeTimer)clearTimeout(closeTimer);
     closeTimer=setTimeout(()=>{closeTimer=0;setupResults()},0);
   }
+  // iOS/TT can move or hide the settings drawer while Select2's popup
+  // remains attached to document.body. Close through Select2's own API
+  // when the user taps outside both its selection and floating dropdown.
+  function onOutsidePointer(event){
+    if(!active||!jq?.data('select2')?.isOpen?.())return;
+    const target=event.target;
+    if(!(target instanceof Element))return;
+    if(target.closest('.select2-container--open'))return;
+    const instance=jq.data('select2');
+    const dropdown=instance?.$dropdown?.[0] ?? instance?.dropdown?.$dropdown?.[0];
+    if(dropdown?.contains?.(target))return;
+    // Do not stop propagation: the page's original click must still work.
+    jq.select2('close');
+  }
   function onClose(){
     if(closeTimer)clearTimeout(closeTimer);
     closeTimer=0;
@@ -174,6 +188,8 @@ export function createGlobalWorldGrouping({getGroups, onWarning=()=>{}}) {
     if(closeTimer)clearTimeout(closeTimer);
     closeTimer=0;
     if(jq)jq.off(namespace);
+    document.removeEventListener('pointerdown',onOutsidePointer,true);
+    document.removeEventListener('touchstart',onOutsidePointer,true);
     cleanupResults();
     select=null;jq=null;
   }
@@ -188,6 +204,11 @@ export function createGlobalWorldGrouping({getGroups, onWarning=()=>{}}) {
     disable();select=el;jq=candidate;active=true;
     jq.on('select2:open'+namespace,onOpen);
     jq.on('select2:close'+namespace,onClose);
+    if('PointerEvent' in globalThis){
+      document.addEventListener('pointerdown',onOutsidePointer,true);
+    }else{
+      document.addEventListener('touchstart',onOutsidePointer,true);
+    }
     return true;
   }
   return {ensure,disable};

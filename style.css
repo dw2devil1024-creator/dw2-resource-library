@@ -887,3 +887,38 @@ select.dw2rl-native-hidden {
 #regex_container .regex-script-container > .dw2rl-regex-header[data-collapsed="true"] + .regex-script-label.dw2rl-regex-collapsed{
   display:none!important;
 }
+
+/* v0.1.30 · Theme-native regex assignment popover, not iOS <select>. */
+#regex_container .regex-script-label > .dw2rl-regex-picker.menu_button{
+  flex:0 0 auto!important;min-width:88px!important;max-width:126px!important;
+  width:auto!important;min-height:33px!important;padding:5px 9px!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-radius:6px!important;
+  background:var(--SmartThemeBlurTintColor,transparent)!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;
+  box-shadow:none!important;font:inherit!important;font-size:11px!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+#regex_container > .dw2rl-regex-picker-menu{
+  z-index:2147483001!important;display:flex!important;flex-direction:column!important;
+  max-height:min(330px,52vh)!important;overflow-y:auto!important;
+  border:1px solid var(--SmartThemeBorderColor,rgba(175,170,170,.4))!important;
+  border-radius:9px!important;
+  background:var(--SmartThemeBlurTintColor,#343033)!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;
+  box-shadow:0 10px 24px rgba(0,0,0,.22)!important;
+  padding:6px!important;box-sizing:border-box!important;
+  -webkit-overflow-scrolling:touch;
+}
+#regex_container .dw2rl-regex-picker-item{
+  display:block!important;width:100%!important;min-height:38px!important;
+  padding:9px 11px!important;margin:0!important;
+  text-align:left!important;white-space:normal!important;
+  border:0!important;border-radius:5px!important;
+  box-shadow:none!important;background:transparent!important;
+  color:inherit!important;font:inherit!important;font-size:12px!important;
+  cursor:pointer!important;touch-action:manipulation!important;
+}
+#regex_container .dw2rl-regex-picker-item[aria-checked="true"]{
+  background:rgba(165,160,160,.16)!important;
+}

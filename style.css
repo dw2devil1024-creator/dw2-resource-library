@@ -791,6 +791,38 @@ select.dw2rl-native-hidden {
   padding-bottom:8px!important;margin-bottom:12px!important;
 }
 
+/* v0.1.36: one editable header per logical prompt folder. A later
+   noncontiguous run is only a faint continuation, never a second box. */
+#completion_prompt_manager_list > li.dw2rl-prompt-continuation{
+  display:block!important;
+  list-style:none!important;
+  box-sizing:border-box!important;
+  min-height:0!important;
+  width:100%!important;
+  margin:10px 0 4px!important;
+  padding:3px 9px!important;
+  background:transparent!important;
+  border:0!important;
+  border-left:2px solid var(--dw2rl-folder-stroke,var(--SmartThemeBorderColor,currentColor))!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  color:var(--SmartThemeBodyColor,inherit)!important;
+  font-family:inherit!important;
+  font-size:10px!important;
+  font-weight:400!important;
+  line-height:1.65!important;
+  opacity:.7!important;
+  pointer-events:none!important;
+}
+#completion_prompt_manager_list > li.dw2rl-prompt-continuation.dw2rl-prompt-continuation-hidden{
+  display:none!important;
+}
+#completion_prompt_manager_list > li.completion_prompt_manager_prompt.dw2rl-prompt-continued-row{
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
 /* v0.1.27: TT-native regex grouping, scope-isolated, no script mutations. */
 #regex_container .dw2rl-regex-toolbar{
   display:flex;flex-wrap:wrap;gap:8px;align-items:center;

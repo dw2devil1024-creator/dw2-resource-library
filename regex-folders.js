@@ -2,7 +2,7 @@
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;
+ const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let frame=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -41,9 +41,24 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function draw(scope,root){
   const key=scopeKey(scope);
-  if(!key){clear(root);return;}
-  const rows=nativeRows(root);if(!rows.length){clear(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();return;}
+  if(!key){clear(root);snapshots.delete(root);return;}
+  const rows=nativeRows(root);if(!rows.length){clear(root);snapshots.delete(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();return;}
   const r=record(key),validGroups=new Map(r.groups.map(g=>[g.id,g.name]));
+  const signature=key+'|'+r.groups.map(g=>g.id+':'+g.name).join('~')+'|'+rows.map(row=>row.id+':'+(r.entries[row.id]||'')).join('~');
+  const old=snapshots.get(root);
+  // The normal 1.2s TT scan must not tear down headers or the frame.
+  // Reuse them while original native rows and membership remain unchanged.
+  if(old?.signature===signature && old.rows.length===rows.length && rows.every((row,i)=>row===old.rows[i])){
+    const headers=[...root.querySelectorAll(':scope > .dw2rl-regex-header')];
+    for(const h of headers){
+      const groupId=h.dataset.groupId;
+      const members=rows.filter(row=>r.entries[row.id]===groupId);
+      const on=members.filter(row=>row.querySelector('input.disable_regex')?.checked===false).length;
+      const count=h.querySelector('.dw2rl-regex-count');
+      if(count)count.textContent='('+on+'/'+members.length+')';
+    }
+    requestOutline(root);return;
+  }
   clear(root);
   let toolbar=root.previousElementSibling;
   if(!toolbar?.classList?.contains('dw2rl-regex-toolbar')){toolbar=node('div','dw2rl-regex-toolbar');root.before(toolbar);}
@@ -81,6 +96,7 @@ export function createRegexFolders({enabled,getState,save,context}){
       const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
       header.dataset.collapsed=String(!!collapsed.get(collapseKey));
       header.dataset.folderKey=collapseKey;
+      header.dataset.groupId=gid;
       header.append(toggle,node('small','dw2rl-regex-count','('+active+'/'+count+')'));
       header.append(btn('✎',()=>showDialog('重命名文件夹',validGroups.get(gid),name=>{
         if(r.groups.some(g=>g.id!==gid&&g.name===name))return false;
@@ -165,9 +181,21 @@ export function createRegexFolders({enabled,getState,save,context}){
     outline._dw2rlHeader=run.header;
     outline._dw2rlLast=run.last;
   }
-  updateOutlines(root);
+  snapshots.set(root,{signature,rows:[...rows]});
+  ensureObserver(root);
+  requestOutline(root);
  }
- function updateOutlines(root){
+ function requestOutline(root){
+   if(frame)cancelAnimationFrame(frame);
+   frame=requestAnimationFrame(()=>{frame=0;if(root.isConnected)updateOutlines(root);});
+ }
+ function ensureObserver(root){
+   if(observers.has(root))return;
+   const resize=new ResizeObserver(()=>requestOutline(root));
+   resize.observe(root);
+   observers.set(root,resize);
+ }
+  function updateOutlines(root){
    const base=root.getBoundingClientRect();
    for(const outline of root.querySelectorAll(':scope > .dw2rl-regex-outline')){
      const header=outline._dw2rlHeader,last=outline._dw2rlLast;
@@ -190,8 +218,8 @@ export function createRegexFolders({enabled,getState,save,context}){
   }
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(()=>{timer=0;sync();},90);}
- function disable(){clearTimeout(timer);timer=0;dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;for(const root of mounted){
-   clear(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
+ function disable(){clearTimeout(timer);timer=0;if(frame)cancelAnimationFrame(frame);frame=0;for(const resize of observers.values())resize.disconnect();observers.clear();dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;for(const root of mounted){
+   clear(root);snapshots.delete(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
    for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-picker')?.remove();
   }mounted.clear();}
  return {sync:schedule,disable};

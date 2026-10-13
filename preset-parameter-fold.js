@@ -8,7 +8,7 @@ const BUTTON_ID='dw2rl-parameter-fold';
 const FOLD_CLASS='dw2rl-parameter-collapsed';
 const EXTRA_CLASS='dw2rl-fold-secondary-parameters';
 export function createPresetParameterFold(){
-  let enabled=false,collapsed=false,button=null,root=null;
+  let enabled=false,collapsed=true,button=null,root=null;
   const extra=new Set();
   function clearExtra(){
     for(const node of extra)node.classList.remove(EXTRA_CLASS);

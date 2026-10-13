@@ -737,3 +737,9 @@ select.dw2rl-native-hidden {
 #completion_prompt_manager > .dw2rl-prompt-dialog-backdrop{
   overscroll-behavior:contain!important;
 }
+
+/* v0.1.22 · Single inline native TT group action; no stacked buttons. */
+#dw2rl-prompt-folders-actions{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;align-items:center!important;gap:8px!important}
+#dw2rl-prompt-folders #dw2rl-prompt-folders-actions .menu_button{width:auto!important;max-width:100%!important;display:inline-flex!important;white-space:nowrap!important}
+#dw2rl-prompt-folders-head{margin-bottom:7px!important}
+#dw2rl-prompt-folders-hint{margin:8px 0 0!important;line-height:1.55!important}

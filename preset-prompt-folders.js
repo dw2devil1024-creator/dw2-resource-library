@@ -158,7 +158,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     const rec=pending||currentRecord(),group=rec?.groups.find(g=>g.id===id);if(!group)return;
     openDialog({title:'修改文件夹名称',initial:group.name,onSubmit:name=>{
       if(rec.groups.some(g=>g.id!==id&&g.name===name))return false;
-      getDraft().groups.find(g=>g.id===id).name=name;render();
+      getDraft().groups.find(g=>g.id===id).name=name;commit();
     }});
   }
   function removeGroup(id){
@@ -166,7 +166,7 @@ export function createPromptFolders({enabled,getState,save,context}){
     openDialog({title:'删除「'+group.name+'」？提示词不会被删除。',danger:true,confirmLabel:'删除文件夹',onSubmit:()=>{
       const draft=getDraft();draft.groups=draft.groups.filter(g=>g.id!==id);
       for(const [key,gid] of Object.entries(draft.entries))if(gid===id)delete draft.entries[key];
-      folderCollapsed.delete(id);render();
+      folderCollapsed.delete(id);commit();
     }});
   }
   function makeGroup(){selecting=!selecting;first='';folderCollapsed.clear();render();}
@@ -180,7 +180,7 @@ export function createPromptFolders({enabled,getState,save,context}){
       if(rec.groups.some(g=>g.name===name))return false;
       const draft=getDraft(),gid='dw2g'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
       draft.groups.push({id:gid,name});for(const key of picked)draft.entries[key]=gid;
-      first='';selecting=false;render();
+      first='';selecting=false;commit();
     }});
   }
   function commit(){
@@ -209,7 +209,6 @@ export function createPromptFolders({enabled,getState,save,context}){
     toolbar.append(title);
     const actions=el('div',PREFIX+'-actions');
     actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));
-    if(pending)actions.append(btn('✓ 保存分组',commit,'menu_button dw2rl-save-prompt-folders'));
     toolbar.append(actions);
     // The real folders are now inline with the native rows.
     // Keep management actions separate from their presentation.
@@ -217,13 +216,15 @@ export function createPromptFolders({enabled,getState,save,context}){
     const total=rows.length;
     const message=selecting
       ?(first?'已选起点，请选择最后一条；中间条目自动纳入。':'请选择分组的第一条和最后一条。')
-      :(pending?'分组尚未保存，请点击「保存分组」。':'共 '+total+' 条 · 文件夹直接在下方展开或收起');
+      :'共 '+total+' 条 · 文件夹直接在下方展开或收起';
     toolbar.append(el('div',PREFIX+'-hint',message));
 
   }
   function schedule(){
     if(timer)clearTimeout(timer);
-    timer=setTimeout(()=>{timer=0;render();},240);
+    // TT rebuilds native prompt rows while saving edits. Defer repaint
+    // until its own rerender settles; don't flash ungrouped rows midway.
+    timer=setTimeout(()=>{timer=0;render();},420);
   }
   function disable(){
     if(timer)clearTimeout(timer);timer=0;

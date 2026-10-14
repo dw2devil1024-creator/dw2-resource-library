@@ -317,4 +317,19 @@ assert.equal(normalizeLegacyGroups({},valid),null);
 const promptFolderState=normalizeState({promptFoldersEnabled:true,promptFolders:{'织界 V659':{groups:[{id:'core',name:'核心规则'}],entries:{a:'core',b:'missing'}}}});
 assert.equal(promptFolderState.promptFoldersEnabled,true);
 assert.deepEqual(promptFolderState.promptFolders['织界 V659'].entries,{a:'core'});
+// v0.1.40: per-preset accordion preferences survive TT setting reloads,
+// remain isolated by preset name and cannot refer to deleted group IDs.
+const foldedState=normalizeState({promptFoldersEnabled:true,promptFolders:{
+  '织界 A':{groups:[{id:'main',name:'主要'},{id:'extra',name:'扩展'}],
+    entries:{p:'main'},collapsed:{main:true,extra:false,deleted:true}},
+  '别人的预设 B':{groups:[{id:'other',name:'另一组'}],
+    entries:{q:'other'},collapsed:{other:true}},
+  '没有分组 C':{groups:[],entries:{}}
+}});
+const foldedRoundTrip=normalizeState(JSON.parse(JSON.stringify(foldedState)));
+assert.deepEqual(foldedRoundTrip.promptFolders['织界 A'].collapsed,{main:true});
+assert.deepEqual(foldedRoundTrip.promptFolders['别人的预设 B'].collapsed,{other:true});
+assert.deepEqual(foldedRoundTrip.promptFolders['没有分组 C'].collapsed,{});
+assert.deepEqual(foldedRoundTrip.promptFolders['织界 A'].entries,{p:'main'});
+console.log('DW2 Resource Library: preset group folded state survives reload without cross-preset leakage');
 console.log('DW2 Resource Library: legacy read-only prompt groups and persisted folder identities passed');

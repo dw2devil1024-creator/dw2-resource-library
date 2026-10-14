@@ -24,7 +24,7 @@ export function normalizeLegacyGroups(raw,validIds){
 export function createPromptFolders({enabled,getState,save,context,getActivePromptIds}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   const folderCollapsed=new Map();
-  let lastRenderedRows=[],lastRenderedList=null;
+  let lastRenderedRows=[],lastRenderedList=null,lastToolbarSignature='';
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
   const doc=()=>document;
   function presetName(){
@@ -48,7 +48,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     if(!rec.collapsed||typeof rec.collapsed!=='object'||Array.isArray(rec.collapsed))rec.collapsed={};
     if(currentPreset!==name){
       currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;
-      lastSignature='';lastRenderedRows=[];lastRenderedList=null;
+      lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
       for(const group of rec.groups||[]){
         if(rec.collapsed[group.id]===true)folderCollapsed.set(group.id,true);
       }
@@ -389,17 +389,22 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     if(!toolbar || toolbar.parentElement!==list.parentElement || toolbar.nextElementSibling!==list){
       toolbar?.remove();
       toolbar=el('div',PREFIX);list.parentElement.insertBefore(toolbar,list);
+      lastToolbarSignature='';
     }
     host=list;
     bindSort(list);
     observeNativeRows(list);
-    toolbar.replaceChildren();
-    const title=el('div',PREFIX+'-head','提示词分组');
-    title.append(el('small','',' · 按原生顺序整理'));
-    toolbar.append(title);
-    const actions=el('div',PREFIX+'-actions');
-    actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));
-    toolbar.append(actions);
+    const toolbarSignature=JSON.stringify([currentPreset,selecting,first,rows.length]);
+    const toolbarChanged=lastToolbarSignature!==toolbarSignature;
+    if(toolbarChanged){
+      toolbar.replaceChildren();
+      const title=el('div',PREFIX+'-head','提示词分组');
+      title.append(el('small','',' · 按原生顺序整理'));
+      toolbar.append(title);
+      const actions=el('div',PREFIX+'-actions');
+      actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));
+      toolbar.append(actions);
+    }
     // When TT only changed toggle state, preserve the exact existing
     // headers, DOM nodes, scroll position and iOS touch state.
     const effective=pending||rec;
@@ -417,7 +422,10 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const message=selecting
       ?(first?'已选起点，请选择最后一条；中间条目自动纳入。':'请选择分组的第一条和最后一条。')
       :'共 '+total+' 条 · 文件夹直接在下方展开或收起';
-    toolbar.append(el('div',PREFIX+'-hint',message));
+    if(toolbarChanged){
+      toolbar.append(el('div',PREFIX+'-hint',message));
+      lastToolbarSignature=toolbarSignature;
+    }
     }finally{building=false;}
   }
   function schedule(){
@@ -439,7 +447,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
-    lastSignature='';lastRenderedRows=[];lastRenderedList=null;
+    lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
   }
   return {sync:schedule,prepare,disable,getSelectedPresetName:presetName,ensureSelectedPresetGroups};
 }

@@ -110,7 +110,15 @@ export function normalizeState(input) {
           if(id.length<=300 && typeof groupId==='string' && seen.has(groupId))entries[id]=groupId;
         }
       }
-      state.promptFolders[name]={groups,entries,embeddedImportHandled:raw.embeddedImportHandled===true};
+      // Remember folded headers independently for each named preset. Older
+      // backups did not contain this optional field, so default is expanded.
+      const collapsed={};
+      if(raw.collapsed && typeof raw.collapsed==='object' && !Array.isArray(raw.collapsed)){
+        for(const group of groups){
+          if(raw.collapsed[group.id]===true)collapsed[group.id]=true;
+        }
+      }
+      state.promptFolders[name]={groups,entries,collapsed,embeddedImportHandled:raw.embeddedImportHandled===true};
     }
   }
   const oldResourceBackups=input.resourceMigrationBackup;

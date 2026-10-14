@@ -24,6 +24,7 @@ export function normalizeLegacyGroups(raw,validIds){
 export function createPromptFolders({enabled,getState,save,context,getActivePromptIds}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   const folderCollapsed=new Map();
+  let lastRenderedRows=[],lastRenderedList=null;
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
   const doc=()=>document;
   function presetName(){
@@ -42,9 +43,17 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     if(!state.promptFolders||typeof state.promptFolders!=='object')state.promptFolders={};
     const name=presetName();
     if(!name)return null;
-    if(currentPreset!==name){currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;}
-    if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{}};
-    return state.promptFolders[name];
+    if(!state.promptFolders[name])state.promptFolders[name]={groups:[],entries:{},collapsed:{}};
+    const rec=state.promptFolders[name];
+    if(!rec.collapsed||typeof rec.collapsed!=='object'||Array.isArray(rec.collapsed))rec.collapsed={};
+    if(currentPreset!==name){
+      currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;
+      lastSignature='';lastRenderedRows=[];lastRenderedList=null;
+      for(const group of rec.groups||[]){
+        if(rec.collapsed[group.id]===true)folderCollapsed.set(group.id,true);
+      }
+    }
+    return rec;
   }
   // Import by exact *selected preset name* and only if DW2 has no folders yet.
   // The same embedded field can be stored in a preset after BaiBai is gone.
@@ -129,16 +138,23 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     observedList=list;
     renderObserver=new MutationObserver(changes=>{
       if(building || !enabled())return;
-      // Only native TT prompt row replacement matters. Ignore DW2's own
-      // folder headers and picker controls to avoid observer feedback loops.
+      // Only TT native rows being replaced or reordered require a full
+      // group rebuild. Internal header mutations cannot trigger this path.
       const nativeChanged=changes.some(change=>{
         if(change.type!=='childList'||change.target!==list)return false;
         return [...change.addedNodes,...change.removedNodes].some(node=>
           node.nodeType===1&&node.matches?.('li.completion_prompt_manager_prompt'));
       });
-      if(nativeChanged)render();
+      if(nativeChanged){render();return;}
+      // TT can also flip a toggle icon's class in place. Refresh counters
+      // without destroying the list or its folder headers.
+      if(changes.some(change=>change.type==='attributes'&&
+         change.target?.matches?.('.prompt-manager-toggle-action'))){
+        const rec=currentRecord();
+        if(rec)updateGroupCounts(records(),pending||rec);
+      }
     });
-    renderObserver.observe(list,{childList:true});
+    renderObserver.observe(list,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
   }
   function groupAtDrop(moved,entries,validGroups){
     // Decide from the immediately preceding *meaningful* sibling, never
@@ -189,7 +205,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
         header.dataset.groupId=groupId;
         const bar=el('div','dw2rl-inline-folder');
         const toggle=btn((expandedGroup(groupId)?'▾ ':'▸ ')+names.get(groupId),()=>{
-          folderCollapsed.set(groupId,!folderCollapsed.get(groupId));render();
+          toggleGroup(groupId);
         },'dw2rl-inline-folder-toggle');
         toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
         const counts=countGroup(groupId,rows,effective.entries);
@@ -220,7 +236,66 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       if(groupId&&!selecting&&!expandedGroup(groupId))row.classList.add('dw2rl-prompt-row-filtered');
     }
   }
-  function expandedGroup(key){return folderCollapsed.get(key)!==true;}
+  function expandedGroup(key){return selecting||folderCollapsed.get(key)!==true;}
+  // Fold/unfold only toggles CSS classes. Never remove and recreate 200+
+  // PromptManager rows just to open a single group.
+  function toggleGroup(groupId){
+    const rec=currentRecord();
+    if(!rec)return;
+    const next=folderCollapsed.get(groupId)!==true;
+    if(next){folderCollapsed.set(groupId,true);rec.collapsed[groupId]=true;}
+    else{folderCollapsed.delete(groupId);delete rec.collapsed[groupId];}
+    const list=doc().getElementById('completion_prompt_manager_list');
+    if(!list)return;
+    const rows=records();
+    for(const row of rows){
+      if(rec.entries[safe(row.dataset.pmIdentifier)]!==groupId)continue;
+      row.classList.toggle('dw2rl-prompt-row-filtered',next&&!selecting);
+    }
+    for(const label of list.querySelectorAll(':scope > li.dw2rl-prompt-continuation')){
+      if(label.dataset.groupId===groupId)
+        label.classList.toggle('dw2rl-prompt-continuation-hidden',next&&!selecting);
+    }
+    const name=rec.groups.find(group=>group.id===groupId)?.name||'';
+    for(const header of list.querySelectorAll(':scope > li.dw2rl-prompt-inline-section')){
+      if(header.dataset.groupId!==groupId)continue;
+      const button=header.querySelector('.dw2rl-inline-folder-toggle');
+      if(button){
+        button.textContent=(next?'▸ ':'▾ ')+name;
+        button.setAttribute('aria-expanded',String(!next));
+      }
+    }
+    lastSignature=folderSignature(rows,pending||rec);
+    save();
+  }
+  function updateGroupCounts(rows,rec){
+    const list=doc().getElementById('completion_prompt_manager_list');
+    if(!list)return;
+    const counters=new Map();
+    for(const row of rows){
+      const gid=rec.entries[safe(row.dataset.pmIdentifier)];
+      if(!gid)continue;
+      if(!counters.has(gid))counters.set(gid,{total:0,on:0});
+      const count=counters.get(gid);
+      count.total++;
+      if(row.querySelector('.prompt-manager-toggle-action.fa-toggle-on'))count.on++;
+    }
+    for(const header of list.querySelectorAll(':scope > li.dw2rl-prompt-inline-section')){
+      const count=counters.get(header.dataset.groupId);
+      const field=header.querySelector('.dw2rl-group-count');
+      if(field&&count){
+        const label='('+count.on+'/'+count.total+')';
+        if(field.textContent!==label)field.textContent=label;
+      }
+    }
+  }
+  function folderSignature(rows,rec){
+    return JSON.stringify({
+      preset:currentPreset,selecting,first,
+      groups:(rec.groups||[]).map(g=>[g.id,g.name,folderCollapsed.get(g.id)===true]),
+      rows:rows.map(row=>[safe(row.dataset.pmIdentifier),rec.entries[safe(row.dataset.pmIdentifier)]||''])
+    });
+  }
   function saveRecord(){save();render();}
 
   function openDialog({title,initial='',onSubmit,confirmLabel='保存',danger=false}){
@@ -275,7 +350,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       folderCollapsed.delete(id);commit();
     }});
   }
-  function makeGroup(){selecting=!selecting;first='';folderCollapsed.clear();render();}
+  function makeGroup(){selecting=!selecting;first='';render();}
   function tapRange(id){
     const ids=records().map(r=>safe(r.dataset.pmIdentifier));
     if(!first){first=id;render();return;}
@@ -292,6 +367,8 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   function commit(){
     const rec=currentRecord();if(!rec||!pending)return;
     rec.groups=pending.groups;rec.entries=pending.entries;
+    const valid=new Set(rec.groups.map(group=>group.id));
+    for(const id of Object.keys(rec.collapsed||{}))if(!valid.has(id))delete rec.collapsed[id];
     rec.embeddedImportHandled=true; // never revive user-deleted folders
     pending=null;save();render();
   }
@@ -323,9 +400,19 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const actions=el('div',PREFIX+'-actions');
     actions.append(btn(selecting?'× 取消选取':'＋ 新建分组',makeGroup,'menu_button'));
     toolbar.append(actions);
-    // The real folders are now inline with the native rows.
-    // Keep management actions separate from their presentation.
-    showRows(rows,rec);
+    // When TT only changed toggle state, preserve the exact existing
+    // headers, DOM nodes, scroll position and iOS touch state.
+    const effective=pending||rec;
+    const signature=folderSignature(rows,effective);
+    const sameStructure=lastRenderedList===list&&
+      lastRenderedRows.length===rows.length&&
+      rows.every((row,i)=>row===lastRenderedRows[i]);
+    if(!sameStructure||signature!==lastSignature){
+      showRows(rows,rec);
+      lastRenderedList=list;lastRenderedRows=rows.slice();lastSignature=signature;
+    }else{
+      updateGroupCounts(rows,effective);
+    }
     const total=rows.length;
     const message=selecting
       ?(first?'已选起点，请选择最后一条；中间条目自动纳入。':'请选择分组的第一条和最后一条。')
@@ -352,6 +439,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     dialog?.remove();dialog=null;
     doc().getElementById('completion_prompt_manager_list')?.classList.remove('dw2rl-prompt-list-filtering');
     toolbar?.remove();toolbar=null;host=null;active='all';currentPreset='';folderCollapsed.clear();selecting=false;first='';pending=null;
+    lastSignature='';lastRenderedRows=[];lastRenderedList=null;
   }
   return {sync:schedule,prepare,disable,getSelectedPresetName:presetName,ensureSelectedPresetGroups};
 }

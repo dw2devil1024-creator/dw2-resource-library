@@ -1,5 +1,22 @@
 # DW2 · Resource Library（资源分类）
 
+## 版权与使用限制 · PRIVATE PROJECT / ALL RIGHTS RESERVED
+
+> **私人自用项目｜不授予公众使用或二次开发许可。**
+>
+> © 2026 **S.A. · DW2**。本仓库公开仅为托管，以及相关权利人自行维护、安装和更新之便。**公开可见不等于开放授权，亦不代表开源许可。**
+>
+> **未经相关权利人事先明确书面授权，第三方不得：**
+> - 将本项目的原创代码、界面或资源用于自行安装运行或其他用途；
+> - 超出 GitHub 平台条款允许的范围，复制、转载、镜像、重新打包或分发相关内容；
+> - 修改、改编、移植、拆分、合并、提取模块，或据此进行二次开发；
+> - 对外发布、重新发布、售卖、商业化或以其他名义提供本项目及其衍生版本；
+> - 删除、篡改署名，或将他人的原创成果宣称为自己的作品。
+>
+> **保留所有权利。** 本仓库没有授予第三方上述行为的公共许可证。GitHub 服务条款允许的查看、站内 Fork 等行为，以及适用法律规定不得排除的例外，不受本声明限制。本声明只适用于相关权利人依法有权控制的原创部分，不撤销、不取代任何第三方代码或素材已经适用的许可及权利。
+>
+> *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
+
 **联合署名：S.A. · DW2**  
 **版本：v0.1.40-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
@@ -341,7 +358,7 @@ https://github.com/dw2devil1024-creator/dw2-resource-library
 - 世界书「全局启用」和「编辑选择」保留两种不同的资源选择动作，但共享同一份文件夹分类记录，不混淆启用状态与编辑状态。
 - 具体 TT 版本、主题、世界书 Select2 组件可能存在差异，**本地模拟浏览器测试通过不代表 iOS / Android TT 实机已通过**。
 - 本扩展不提供删除预设、删除主题、删除世界书，也不触碰聊天或存档内容。
-- 版权归 `S.A. · DW2`。独立实现了这一版本的逻辑，没有复制第三方插件的源码。公开发布时请由仓库所有者决定许可证。
+- 版权归 `S.A. · DW2`。独立实现了这一版本的逻辑，没有复制第三方插件的源码。本仓库的原创内容保留所有权利，具体使用限制见文首声明。
 
 ## 开发检查
 

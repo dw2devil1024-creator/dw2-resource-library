@@ -2,7 +2,7 @@
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let listening=false;let refreshToken=0;
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -86,8 +86,8 @@ export function createRegexFolders({enabled,getState,save,context}){
       const header=node('div','dw2rl-regex-header');
       runs.push({header,first:row,last:row,key:key+':'+gid});
       const collapseKey=key+':'+gid;
-      const toggle=btn((collapsed.get(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{
-        const next=!collapsed.get(collapseKey);
+      const toggle=btn((isCollapsed(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{
+        const next=!isCollapsed(collapseKey);
         collapsed.set(collapseKey,next);
         // Fast path: change ONLY this folder's rows, no full TT list rebuild.
         // All rows in noncontiguous runs of this group share the same state.
@@ -104,7 +104,7 @@ export function createRegexFolders({enabled,getState,save,context}){
       const members=rows.filter(x=>r.entries[x.id]===gid);
       const count=members.length;
       const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
-      header.dataset.collapsed=String(!!collapsed.get(collapseKey));
+      header.dataset.collapsed=String(isCollapsed(collapseKey));
       header.dataset.folderKey=collapseKey;
       header.dataset.groupId=gid;
       header.append(toggle,node('small','dw2rl-regex-count','('+active+'/'+count+')'));
@@ -181,7 +181,7 @@ export function createRegexFolders({enabled,getState,save,context}){
     if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');
       const run=runs[runs.length-1];if(run)run.last=row;
     }
-    if(gid&&collapsed.get(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
+    if(gid&&isCollapsed(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
     last=gid;
   });
   for(const run of runs){

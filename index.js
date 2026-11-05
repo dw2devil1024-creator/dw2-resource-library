@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.39-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.41-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -11,7 +11,7 @@ import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
 import {createPromptFolders} from './preset-prompt-folders.js';
 import {promptManager} from '../../../openai.js';
-import {createRegexFolders} from './regex-folders.js';
+import {createRegexFolders} from './regex-folders.js?v=0.1.41-beta.1';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';

@@ -58,15 +58,20 @@ export function createRegexFolders({enabled,getState,save,context}){
    return state.regexFolders[scope];
  }
  function groupAtDrop(moved,entries,validIds){
-   let previous=moved?.previousElementSibling;
-   while(previous && !previous.classList.contains('regex-script-label') &&
-     !previous.classList.contains('dw2rl-regex-header')){
-     previous=previous.previousElementSibling;
-   }
-   if(!previous)return '';
-   const target=previous.classList.contains('dw2rl-regex-header')
-     ? previous.dataset.groupId : entries[previous.id];
-   return validIds.has(target)?target:'';
+   const meaningful=node=>node?.classList?.contains('regex-script-label') ||
+     node?.classList?.contains('dw2rl-regex-header');
+   let prev=moved?.previousElementSibling,next=moved?.nextElementSibling;
+   while(prev&&!meaningful(prev))prev=prev.previousElementSibling;
+   while(next&&!meaningful(next))next=next.nextElementSibling;
+   const group=node=>{
+     if(!node)return '';
+     const id=node.classList.contains('dw2rl-regex-header')
+       ? node.dataset.groupId : entries[node.id];
+     return validIds.has(id)?id:'';
+   };
+   const before=group(prev),after=group(next);
+   if(prev?.classList.contains('dw2rl-regex-header'))return before;
+   return before&&before===after?before:'';
  }
  function bindSort(scope,root){
    if(transfers.has(root))return;
@@ -161,11 +166,13 @@ export function createRegexFolders({enabled,getState,save,context}){
   toolbar.append(newGroup,node('small','','仅整理界面 · 不改变正则执行与启用状态'));
   }
   let last='';
-  const runs=[];
+  const runs=[],seenGroups=new Set();
   rows.forEach((row,index)=>{
     const gid=validGroups.has(r.entries[row.id])?r.entries[row.id]:'';
     if(gid!==last&&gid){
+      const continuation=seenGroups.has(gid);
       const saved=previous.find(run=>run.first===row && run.gid===gid &&
+        !!run.continuation===continuation &&
         run.header.parentElement===root && run.outline?.parentElement===root);
       const header=saved?.header||node('div','dw2rl-regex-header');
       const collapseKey=key+':'+gid;
@@ -182,11 +189,13 @@ export function createRegexFolders({enabled,getState,save,context}){
             if(h.dataset.folderKey!==collapseKey)return;
             h.dataset.collapsed=String(next);
             const t=h.querySelector('.dw2rl-regex-folder-name');
-            if(t)t.textContent=(next?'▸ ':'▾ ')+(state.groups.find(g=>g.id===gid)?.name||'');
+            if(t)t.textContent=(next?'▸ ':'▾ ')+(h.dataset.continuation==='true'?'↳ ':'')+(state.groups.find(g=>g.id===gid)?.name||'')+(h.dataset.continuation==='true'?' · 续':'');
           });
           updateOutlines(root);
         },'dw2rl-regex-folder-name');
-        header.append(toggle,node('small','dw2rl-regex-count',''));
+        header.append(toggle);
+        if(!continuation){
+        header.append(node('small','dw2rl-regex-count',''));
         header.append(btn('✎',()=>{
           const state=record(key);
           const current=state.groups.find(g=>g.id===gid)?.name;
@@ -210,18 +219,20 @@ export function createRegexFolders({enabled,getState,save,context}){
             save();return true;
           },{confirmOnly:true,confirmText:'删除文件夹'});
         }));
+        }
       }
       header.dataset.collapsed=String(isCollapsed(collapseKey));
       header.dataset.folderKey=collapseKey;
       header.dataset.groupId=gid;
+      header.dataset.continuation=String(continuation);
       const title=header.querySelector('.dw2rl-regex-folder-name');
-      if(title)title.textContent=(isCollapsed(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid);
+      if(title)title.textContent=(isCollapsed(collapseKey)?'▸ ':'▾ ')+(continuation?'↳ ':'')+validGroups.get(gid)+(continuation?' · 续':'');
       const members=rows.filter(x=>r.entries[x.id]===gid);
       const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
       const counter=header.querySelector('.dw2rl-regex-count');
       if(counter)counter.textContent='('+active+'/'+members.length+')';
       if(header.nextElementSibling!==row)root.insertBefore(header,row);
-      runs.push({header,first:row,last:row,key:collapseKey,gid,saved});
+      runs.push({header,first:row,last:row,key:collapseKey,gid,continuation,saved});
       usedHeaders.add(header);
     }
     // Move-to-folder menu belongs to the row and uses a native <select>,
@@ -288,6 +299,7 @@ export function createRegexFolders({enabled,getState,save,context}){
       const run=runs[runs.length-1];if(run)run.last=row;
     }
     if(gid&&isCollapsed(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
+    if(gid)seenGroups.add(gid);
     last=gid;
   });
   for(const run of runs){

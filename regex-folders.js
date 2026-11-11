@@ -27,6 +27,13 @@ export function findLegacyScopedRegexFolder(folders,visibleIds){
 
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
+const DEFAULT_FOLDER='__dw2_default__';
+const LOOSE_FOLDER='__dw2_loose__';
+const folderFor=(state,scriptId,valid)=> {
+ const stored=state.entries[scriptId];
+ return stored===LOOSE_FOLDER?LOOSE_FOLDER
+   :valid.has(stored)?stored:DEFAULT_FOLDER;
+};
 export function createRegexFolders({enabled,getState,save,context}){
  const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const dragBindings=new Map(),nativeSortMemory=new Map();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
@@ -97,10 +104,10 @@ export function createRegexFolders({enabled,getState,save,context}){
    const element=document.elementFromPoint?.(event.clientX,event.clientY);
    if(!element||!root.contains(element))return null;
    const item=element.closest?.('.dw2rl-regex-header,.regex-script-label');
-   if(!item||!root.contains(item))return '__ungrouped';
+   if(!item||!root.contains(item))return LOOSE_FOLDER;
    return item.classList.contains('dw2rl-regex-header')
-    ?item.dataset.groupId||'__ungrouped'
-    :item.dataset.dw2rlFolderId||'__ungrouped';
+    ?item.dataset.groupId||LOOSE_FOLDER
+    :item.dataset.dw2rlFolderId||LOOSE_FOLDER;
   };
   const clear=()=>{
    if(!gesture)return;
@@ -130,11 +137,13 @@ export function createRegexFolders({enabled,getState,save,context}){
    if(target===null)return;
    const key=scopeKey(scope);
    if(!key)return;
-   const state=record(key),id=target==='__ungrouped'?''
-     :state.groups.some(g=>g.id===target)?target:'';
-   if((state.entries[row.id]||'')===id)return;
-   if(id)state.entries[row.id]=id;
-   else delete state.entries[row.id];
+   const state=record(key),valid=new Set(state.groups.map(g=>g.id));
+   const next=target===DEFAULT_FOLDER?DEFAULT_FOLDER
+    :target===LOOSE_FOLDER?LOOSE_FOLDER
+    :valid.has(target)?target:LOOSE_FOLDER;
+   if(folderFor(state,row.id,valid)===next)return;
+   if(next===DEFAULT_FOLDER)delete state.entries[row.id];
+   else state.entries[row.id]=next;
    save();schedule();
   };
   const cancel=()=>clear();
@@ -160,7 +169,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  function refreshCounts(root,rows,state){
   const ids=new Set((state.groups||[]).map(g=>g.id)),stat=new Map();
   for(const row of rows){
-   const gid=ids.has(state.entries[row.id])?state.entries[row.id]:'__ungrouped';
+   const gid=folderFor(state,row.id,ids);
    const bucket=stat.get(gid)||{on:0,total:0};bucket.total++;
    if(row.querySelector('input.disable_regex')?.checked===false)bucket.on++;
    stat.set(gid,bucket);
@@ -173,7 +182,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function clear(root){
   unbindGroupDrag(root);
-  root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline').forEach(x=>x.remove());
+  root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline, :scope > .dw2rl-regex-free-drop').forEach(x=>x.remove());
   root.classList.remove('dw2rl-regex-logical');
   root.style.removeProperty('display');root.style.removeProperty('flex-direction');
   for(const row of nativeRows(root)){
@@ -209,11 +218,11 @@ export function createRegexFolders({enabled,getState,save,context}){
    }
    header.dataset.collapsed=String(collapsedNow);
    label.textContent=(collapsedNow?'▸ ':'▾ ')+
-    (gid==='__ungrouped'?'未分组':record(key).groups.find(g=>g.id===gid)?.name||'');
+    (gid===DEFAULT_FOLDER?'默认分组':record(key).groups.find(g=>g.id===gid)?.name||'');
    updateOutlines(root);
   },'dw2rl-regex-folder-name');
   header.append(label,node('small','dw2rl-regex-count',''));
-  if(gid!=='__ungrouped'){
+  if(gid!==DEFAULT_FOLDER){
    header.append(btn('✎',()=>{
     const current=record(key).groups.find(g=>g.id===gid)?.name;
     if(current===undefined)return;
@@ -240,7 +249,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  function draw(scope,root){
   const key=scopeKey(scope);
   if(!key){clear(root);snapshots.delete(root);return;}
-  const r=record(key),rows=nativeRows(root),logical=r.groups.length>0;
+  const r=record(key),rows=nativeRows(root),logical=true;
   if(!rows.length&&!logical){
    clear(root);snapshots.delete(root);
    root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')
@@ -252,7 +261,7 @@ export function createRegexFolders({enabled,getState,save,context}){
   const valid=new Map(r.groups.map(g=>[g.id,g.name]));
   const validGroups=valid; // Stable existing iOS folder picker compatibility.
   const signature=JSON.stringify([key,r.groups.map(g=>[g.id,g.name]),
-   rows.map(row=>[row.id,valid.has(r.entries[row.id])?r.entries[row.id]:''])]);
+   rows.map(row=>[row.id,folderFor(r,row.id,valid)])]);
   const same=previous?.key===key&&previous?.signature===signature&&
    previous.logical===logical&&previous.rows.length===rows.length&&
    rows.every((row,i)=>row===previous.rows[i])&&
@@ -293,11 +302,13 @@ export function createRegexFolders({enabled,getState,save,context}){
    if(outline.dataset.folderKey?.startsWith(key+':')&&!oldOutlines.has(outline.dataset.groupId))
     oldOutlines.set(outline.dataset.groupId,outline);
   }
-  const folders=logical?[...r.groups,{id:'__ungrouped',name:'未分组'}]:[];
+  const folders=[{id:DEFAULT_FOLDER,name:'默认分组'},...r.groups];
   const members=new Map(folders.map(g=>[g.id,[]]));
+  const looseRows=[];
   for(const row of rows){
-   const gid=valid.has(r.entries[row.id])?r.entries[row.id]:'__ungrouped';
-   members.get(gid)?.push(row);
+   const gid=folderFor(r,row.id,valid);
+   if(gid===LOOSE_FOLDER)looseRows.push(row);
+   else members.get(gid)?.push(row);
   }
   let ordinal=0;
   const keepHeaders=new Set(),keepOutlines=new Set(),runs=[];
@@ -334,8 +345,18 @@ export function createRegexFolders({enabled,getState,save,context}){
    if(!keepHeaders.has(h))h.remove();
   for(const outline of root.querySelectorAll(':scope > .dw2rl-regex-outline'))
    if(!keepOutlines.has(outline))outline.remove();
+  // A small unframed drop line, not a fourth folder.
+  let freeDrop=root.querySelector(':scope > .dw2rl-regex-free-drop');
+  if(!freeDrop){freeDrop=node('div','dw2rl-regex-free-drop',
+    '↓ 拖到这里可独立散放 · 不加入任何文件夹');root.append(freeDrop);}
+  freeDrop.style.order=String(ordinal++);
+  for(const row of looseRows){
+   row.style.order=String(ordinal++);
+   row.dataset.dw2rlFolderId=LOOSE_FOLDER;
+   row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
+  }
   for(const row of rows){
-   const gid=valid.has(r.entries[row.id])?r.entries[row.id]:'';
+   const gid=folderFor(r,row.id,valid);
    if(!logical){
     row.style.removeProperty('order');
     delete row.dataset.dw2rlFolderId;
@@ -349,12 +370,14 @@ export function createRegexFolders({enabled,getState,save,context}){
         const current=record(scopeIdentity);
         const menu=node('div','dw2rl-regex-picker-menu');
         menu.setAttribute('role','menu');
-        const choices=[{id:'',name:'未分组'},...current.groups];
+        const choices=[{id:DEFAULT_FOLDER,name:'默认分组'},...current.groups,
+          {id:LOOSE_FOLDER,name:'独立散放（不进分组）'}];
         for(const choice of choices){
-          const selected=(current.entries[row.id]||'')===choice.id;
+          const selected=folderFor(current,row.id,
+            new Set(current.groups.map(g=>g.id)))===choice.id;
           const item=btn((selected?'✓  ':'   ')+choice.name,()=>{
-            if(choice.id)current.entries[row.id]=choice.id;
-            else delete current.entries[row.id];
+            if(choice.id===DEFAULT_FOLDER)delete current.entries[row.id];
+            else current.entries[row.id]=choice.id;
             folderMenu?.remove();folderMenu=null;
             save();schedule();
           },'dw2rl-regex-picker-item');
@@ -392,7 +415,8 @@ export function createRegexFolders({enabled,getState,save,context}){
       row.append(picker);
     }
     picker.dataset.scopeKey=key;
-    const nextCaption=(validGroups.get(gid)||'未分组')+'  ▾';
+    const nextCaption=(gid===DEFAULT_FOLDER?'默认分组'
+      :gid===LOOSE_FOLDER?'独立散放':validGroups.get(gid)||'默认分组')+'  ▾';
     if(picker.textContent!==nextCaption)picker.textContent=nextCaption;
 
   }
@@ -493,9 +517,11 @@ export function createRegexFolders({enabled,getState,save,context}){
      const scripts=ctx.characters?.[id]?.data?.extensions?.regex_scripts;
      if(Array.isArray(scripts)&&scripts.length)current=record(key);
    }
-   return {key,groups:Array.isArray(current?.groups)
-     ? current.groups.map(g=>({id:g.id,name:g.name})):[],
-     entries:{...(current?.entries||{})}};
+   return {key,
+     groups:[{id:DEFAULT_FOLDER,name:'默认分组'},
+       ...(Array.isArray(current?.groups)?current.groups.map(g=>({id:g.id,name:g.name})):[])],
+     entries:{...(current?.entries||{})},
+     defaultGroupId:DEFAULT_FOLDER,looseGroupId:LOOSE_FOLDER};
  }
  return {sync,prepare:schedule,disable,getGroupSnapshot};
 }

@@ -778,7 +778,15 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const list=doc().getElementById('completion_prompt_manager_list');
     if(!list)return;
     const rows=records(),rec=currentRecord();
-    if(!rec||!rows.length)return;
+    if(!rec)return;
+    if(!rows.length){
+      // A deletion may remove the final native prompt. Do not leave a
+      // detached folder header or a stale count above the empty list.
+      clearInline(rows);
+      toolbar?.remove();toolbar=null;
+      lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
+      return;
+    }
     building=true;
     try{
     // Restore embedded groups of THIS preset only, without altering TT prompts.

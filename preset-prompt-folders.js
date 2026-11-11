@@ -28,6 +28,91 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   let lastRenderedRows=[],lastRenderedList=null,lastToolbarSignature='';
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
   const doc=()=>document;
+  // Android WebView: TT's PromptManager clears and rebuilds its entire
+  // list after every native enable/disable toggle. While empty the scrolling
+  // drawer loses its height, then TT restores a numeric scroll position.
+  // Keep the old height until DW2 has restored folder headers, and anchor
+  // the tapped row/header rather than trusting that temporary scroll value.
+  const androidScrollGuard=typeof navigator!=='undefined'&&/Android/i.test(navigator.userAgent||'');
+  let viewportGuard=null,viewportTimer=0,viewportFrame=0,guardedList=null;
+  function scrollContainer(){
+    return doc().getElementById('completion_prompt_manager')?.closest('.scrollableInner')
+      ||doc().getElementById('completion_prompt_manager_list')?.closest('.scrollableInner')
+      ||doc().scrollingElement||null;
+  }
+  function anchorForGuard(info){
+    if(!info?.list?.isConnected)return null;
+    if(info.type==='prompt')return records()
+      .find(row=>safe(row.dataset.pmIdentifier)===info.id)||null;
+    return [...info.list.querySelectorAll(':scope > li.dw2rl-prompt-inline-section')]
+      .find(header=>header.dataset.groupId===info.id)||null;
+  }
+  function correctViewport(){
+    const info=viewportGuard;
+    if(!info||!info.scroller?.isConnected)return;
+    const node=anchorForGuard(info);
+    if(!node?.isConnected)return;
+    const top=node.getBoundingClientRect().top-info.scroller.getBoundingClientRect().top;
+    const delta=top-info.relativeTop;
+    if(Number.isFinite(delta)&&Math.abs(delta)>1){
+      info.scroller.scrollTop+=delta;
+    }
+  }
+  function releaseViewportGuard(){
+    const info=viewportGuard;
+    if(viewportTimer)clearTimeout(viewportTimer);
+    if(viewportFrame)cancelAnimationFrame(viewportFrame);
+    viewportTimer=0;viewportFrame=0;viewportGuard=null;
+    if(!info?.list?.style)return;
+    if(info.heightHeld){
+      if(info.oldMinHeight)info.list.style.setProperty('min-height',info.oldMinHeight,info.oldMinPriority);
+      else info.list.style.removeProperty('min-height');
+    }
+  }
+  function settleViewportGuard(){
+    if(!viewportGuard)return;
+    correctViewport();
+    if(viewportFrame)cancelAnimationFrame(viewportFrame);
+    viewportFrame=requestAnimationFrame(()=>{
+      viewportFrame=0;
+      correctViewport();
+      releaseViewportGuard();
+    });
+  }
+  function captureViewport(target,{keepHeight=false}={}){
+    if(!androidScrollGuard)return;
+    const list=doc().getElementById('completion_prompt_manager_list');
+    const scroller=scrollContainer();
+    const row=target?.closest?.('li.completion_prompt_manager_prompt');
+    const header=row?null:target?.closest?.('li.dw2rl-prompt-inline-section');
+    const node=row||header;
+    if(!list||!scroller||!node||!list.contains(node))return;
+    releaseViewportGuard();
+    const id=row?safe(row.dataset.pmIdentifier):safe(header.dataset.groupId);
+    if(!id)return;
+    const oldMinHeight=list.style.getPropertyValue('min-height');
+    const oldMinPriority=list.style.getPropertyPriority('min-height');
+    const height=Math.ceil(list.getBoundingClientRect().height);
+    viewportGuard={
+      list,scroller,type:row?'prompt':'header',id,
+      originalNode:node,relativeTop:node.getBoundingClientRect().top-
+        scroller.getBoundingClientRect().top,
+      heightHeld:keepHeight&&height>0,oldMinHeight,oldMinPriority
+    };
+    if(viewportGuard.heightHeld)list.style.setProperty('min-height',height+'px','important');
+    // If TT suppresses a render, don't leave a minimum height behind.
+    viewportTimer=setTimeout(()=>{correctViewport();releaseViewportGuard();},1800);
+  }
+  function captureNativeToggle(event){
+    const target=event.target?.closest?.('.prompt-manager-toggle-action');
+    if(target&&guardedList?.contains(target))captureViewport(target,{keepHeight:true});
+  }
+  function bindAndroidToggleGuard(list){
+    if(!androidScrollGuard||guardedList===list)return;
+    if(guardedList)guardedList.removeEventListener('click',captureNativeToggle,true);
+    guardedList=list;
+    list.addEventListener('click',captureNativeToggle,true);
+  }
   function presetName(){
     try{
       const ctx=context();
@@ -48,6 +133,9 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const rec=state.promptFolders[name];
     if(!rec.collapsed||typeof rec.collapsed!=='object'||Array.isArray(rec.collapsed))rec.collapsed={};
     if(currentPreset!==name){
+      // A fast preset switch must not leave the previous preset's Android
+      // temporary list height or scroll anchor active.
+      releaseViewportGuard();
       currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;
       lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
       for(const group of rec.groups||[]){
@@ -146,7 +234,13 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
         return [...change.addedNodes,...change.removedNodes].some(node=>
           node.nodeType===1&&node.matches?.('li.completion_prompt_manager_prompt'));
       });
-      if(nativeChanged){schedule();return;}
+      if(nativeChanged){
+        // Recreate our folder presentation in the same mutation checkpoint as
+        // TT's new rows, before Android WebView paints an ungrouped list.
+        if(androidScrollGuard&&records().length)render();
+        else schedule();
+        return;
+      }
       // TT can also flip a toggle icon's class in place. Refresh counters
       // without destroying the list or its folder headers.
       if(changes.some(change=>change.type==='attributes'&&
@@ -209,7 +303,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
         header.dataset.groupId=groupId;
         const bar=el('div','dw2rl-inline-folder');
         const toggle=btn((expandedGroup(groupId)?'▾ ':'▸ ')+names.get(groupId),()=>{
-          toggleGroup(groupId);
+          toggleGroup(groupId,toggle);
         },'dw2rl-inline-folder-toggle');
         toggle.setAttribute('aria-expanded',String(expandedGroup(groupId)));
         const counts=countGroup(groupId,rows,effective.entries);
@@ -243,7 +337,8 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   function expandedGroup(key){return selecting||folderCollapsed.get(key)!==true;}
   // Fold/unfold only toggles CSS classes. Never remove and recreate 200+
   // PromptManager rows just to open a single group.
-  function toggleGroup(groupId){
+  function toggleGroup(groupId,button){
+    captureViewport(button);
     const rec=currentRecord();
     if(!rec)return;
     const next=folderCollapsed.get(groupId)!==true;
@@ -271,6 +366,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     }
     lastSignature=folderSignature(rows,pending||rec);
     save();
+    settleViewportGuard();
   }
   function updateGroupCounts(rows,rec){
     const list=doc().getElementById('completion_prompt_manager_list');
@@ -398,6 +494,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     host=list;
     bindSort(list);
     observeNativeRows(list);
+    bindAndroidToggleGuard(list);
     const toolbarSignature=JSON.stringify([currentPreset,selecting,first,rows.length]);
     const toolbarChanged=lastToolbarSignature!==toolbarSignature;
     if(toolbarChanged){
@@ -421,6 +518,10 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       lastRenderedList=list;lastRenderedRows=rows.slice();lastSignature=signature;
     }else{
       updateGroupCounts(rows,effective);
+    }
+    if(viewportGuard?.type==='prompt'&&viewportGuard.list===list){
+      const newAnchor=anchorForGuard(viewportGuard);
+      if(newAnchor&&newAnchor!==viewportGuard.originalNode)settleViewportGuard();
     }
     const total=rows.length;
     const message=selecting
@@ -450,6 +551,9 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
     microtaskPending=false;sorting=false;
+    releaseViewportGuard();
+    if(guardedList)guardedList.removeEventListener('click',captureNativeToggle,true);
+    guardedList=null;
     clearInline(records());
     if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
     renderObserver?.disconnect();renderObserver=null;observedList=null;

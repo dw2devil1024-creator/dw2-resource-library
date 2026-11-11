@@ -1,5 +1,14 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.46-beta.1 · 安卓预设分组开关与折叠时的跳动修复
+
+- TT 原生 PromptManager 点击条目开关时会异步清空并重新生成原生提示词列表，安卓 WebView 可能在列表暂时为空时压缩滚动区域，随后重新计算并调整滚动位置。
+- 仅针对 Android WebView 的预设分组：点击原生提示词开关时暂时保持列表的最小高度，原生行重新出现即在同一 MutationObserver 刷新检查点恢复 DW2 文件夹，并根据被点击行恢复相对视野位置。
+- 安卓折叠分组时，使用被点击的文件夹标题作为视野锚点，避免大量提示词一次隐藏时滚动容器发生明显跳动。
+- 上述短期保护不会修改原生提示词、开关状态或执行顺序；新旧行替换完成后释放临时样式，并设置超时清理以防异步更新失败。
+- iOS 逻辑和所有预设／正则分组 CSS 均保持不变，避免扰动已经完成 iPhone 实测的正则操作。
+- 通过源码语法与模拟环境检查后仍需 Android TT 实机复测：打开开关、关闭开关、随后收起文件夹，以及连续切换不同文件夹。
+
 ## v0.1.45-beta.1 · 默认分组与独立散放（全局／预设／角色正则）
 
 - 三类正则在启用 DW2 分组功能时均显示内置「默认分组」，不需要先手动创建文件夹；从未明确分配的正则自动在其中显示。内置分组不可删除或重命名，避免破坏初始状态。
@@ -58,7 +67,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.45-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.46-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

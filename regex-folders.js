@@ -28,7 +28,7 @@ export function findLegacyScopedRegexFolder(folders,visibleIds){
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const transfers=new Set(),sortStarts=new WeakMap();let listening=false;let refreshToken=0;
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const dragBindings=new Map(),nativeSortMemory=new Map();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -63,67 +63,126 @@ export function createRegexFolders({enabled,getState,save,context}){
    state.regexFolders[scope]??={groups:[],entries:{}};
    return state.regexFolders[scope];
  }
- function groupAtDrop(moved,entries,validIds){
-   const meaningful=node=>node?.classList?.contains('regex-script-label') ||
-     node?.classList?.contains('dw2rl-regex-header');
-   let prev=moved?.previousElementSibling,next=moved?.nextElementSibling;
-   while(prev&&!meaningful(prev))prev=prev.previousElementSibling;
-   while(next&&!meaningful(next))next=next.nextElementSibling;
-   const group=node=>{
-     if(!node)return '';
-     const id=node.classList.contains('dw2rl-regex-header')
-       ? node.dataset.groupId : entries[node.id];
-     return validIds.has(id)?id:'';
-   };
-   const before=group(prev),after=group(next);
-   if(prev?.classList.contains('dw2rl-regex-header'))return before;
-   return before&&before===after?before:'';
+
+ function freezeNativeSort(root){
+  const $=globalThis.jQuery||globalThis.$;
+  if(typeof $!=='function'||typeof $.fn?.sortable!=='function')return;
+  try{
+   const list=$(root);
+   if(!list.data('ui-sortable')&&!list.data('sortable'))return;
+   if(!nativeSortMemory.has(root))nativeSortMemory.set(root,list.sortable('option','disabled')===true);
+   if(nativeSortMemory.get(root)===false)list.sortable('disable');
+  }catch(e){console.debug('[DW2 Regex] sortable disable',e);}
  }
- function bindSort(scope,root){
-   if(transfers.has(root))return;
-   const jq=globalThis.jQuery||globalThis.$;
-   if(typeof jq!=='function')return;
-   transfers.add(root);
-   jq(root).on('sortstart.dw2rlRegexTransfer',(event,ui)=>{
-     const moved=ui?.item?.[0];
-     sortStarts.set(root,{id:moved?.id,ids:nativeRows(root).map(row=>row.id)});
-   });
-   jq(root).on('sortstop.dw2rlRegexTransfer',(event,ui)=>{
-     const before=sortStarts.get(root);sortStarts.delete(root);
-     const moved=ui?.item?.[0];
-     if(!before||!moved?.id||before.id!==moved.id)return;
-     const now=nativeRows(root).map(row=>row.id);
-     if(before.ids.indexOf(moved.id)===now.indexOf(moved.id))return;
-     const key=scopeKey(scope);
-     if(!key)return;
-     const r=record(key),valid=new Set(r.groups.map(g=>g.id));
-     const next=groupAtDrop(moved,r.entries,valid);
-     if((r.entries[moved.id]||'')===next)return;
-     if(next)r.entries[moved.id]=next;
-     else delete r.entries[moved.id];
-     save();
-     schedule();
-   });
+ function restoreNativeSort(root){
+  const old=nativeSortMemory.get(root);
+  nativeSortMemory.delete(root);
+  if(old!==false)return;
+  const $=globalThis.jQuery||globalThis.$;
+  try{
+   const list=$?.(root);
+   if(list?.data('ui-sortable')||list?.data('sortable'))list.sortable('enable');
+  }catch(e){console.debug('[DW2 Regex] sortable restore',e);}
  }
+ function unbindGroupDrag(root){
+  const release=dragBindings.get(root);
+  if(release){release();dragBindings.delete(root);}
+  restoreNativeSort(root);
+ }
+ function bindGroupDrag(scope,root){
+  freezeNativeSort(root);
+  if(dragBindings.has(root))return;
+  let gesture=null;
+  const locate=event=>{
+   const element=document.elementFromPoint?.(event.clientX,event.clientY);
+   if(!element||!root.contains(element))return null;
+   const item=element.closest?.('.dw2rl-regex-header,.regex-script-label');
+   if(!item||!root.contains(item))return '__ungrouped';
+   return item.classList.contains('dw2rl-regex-header')
+    ?item.dataset.groupId||'__ungrouped'
+    :item.dataset.dw2rlFolderId||'__ungrouped';
+  };
+  const clear=()=>{
+   if(!gesture)return;
+   gesture.row.style.removeProperty('opacity');
+   gesture.highlight?.style.removeProperty('box-shadow');
+   gesture=null;
+   document.removeEventListener('pointermove',move,true);
+   document.removeEventListener('pointerup',up,true);
+   document.removeEventListener('pointercancel',cancel,true);
+  };
+  const move=event=>{
+   if(!gesture||event.pointerId!==gesture.pointerId)return;
+   if(!gesture.moving && Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<9)return;
+   gesture.moving=true;
+   if(event.cancelable)event.preventDefault();
+   gesture.row.style.opacity='0.6';
+   gesture.highlight?.style.removeProperty('box-shadow');
+   const groupId=locate(event);
+   gesture.highlight=[...root.querySelectorAll(':scope > .dw2rl-regex-header')]
+     .find(el=>el.dataset.groupId===groupId)||null;
+   if(gesture.highlight)gesture.highlight.style.boxShadow='inset 0 0 0 1px currentColor';
+  };
+  const up=event=>{
+   if(!gesture||event.pointerId!==gesture.pointerId)return;
+   const {row,moving}=gesture,target=moving?locate(event):null;
+   clear();
+   if(target===null)return;
+   const key=scopeKey(scope);
+   if(!key)return;
+   const state=record(key),id=target==='__ungrouped'?''
+     :state.groups.some(g=>g.id===target)?target:'';
+   if((state.entries[row.id]||'')===id)return;
+   if(id)state.entries[row.id]=id;
+   else delete state.entries[row.id];
+   save();schedule();
+  };
+  const cancel=()=>clear();
+  const down=event=>{
+   if(event.button!==undefined&&event.button!==0)return;
+   const handle=event.target?.closest?.('.drag-handle');
+   const row=handle?.closest?.('.regex-script-label');
+   if(!row||row.parentElement!==root)return;
+   clear();
+   gesture={row,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moving:false,highlight:null};
+   if(event.cancelable)event.preventDefault();
+   event.stopPropagation();
+   document.addEventListener('pointermove',move,true);
+   document.addEventListener('pointerup',up,true);
+   document.addEventListener('pointercancel',cancel,true);
+  };
+  root.addEventListener('pointerdown',down,true);
+  dragBindings.set(root,()=>{clear();root.removeEventListener('pointerdown',down,true);});
+ }
+
  function nativeRows(root){return [...root.children].filter(x=>x.classList?.contains('regex-script-label')&&x.id);}
- function refreshCounts(root,rows,data){
-  const stats=new Map();
+
+ function refreshCounts(root,rows,state){
+  const ids=new Set((state.groups||[]).map(g=>g.id)),stat=new Map();
   for(const row of rows){
-   const gid=data.entries[row.id];if(!gid)continue;
-   const stat=stats.get(gid)||{on:0,total:0};
-   stat.total++;if(row.querySelector('input.disable_regex')?.checked===false)stat.on++;
-   stats.set(gid,stat);
+   const gid=ids.has(state.entries[row.id])?state.entries[row.id]:'__ungrouped';
+   const bucket=stat.get(gid)||{on:0,total:0};bucket.total++;
+   if(row.querySelector('input.disable_regex')?.checked===false)bucket.on++;
+   stat.set(gid,bucket);
   }
   for(const header of root.querySelectorAll(':scope > .dw2rl-regex-header')){
-   const stat=stats.get(header.dataset.groupId)||{on:0,total:0};
-   const count=header.querySelector('.dw2rl-regex-count'),value='('+stat.on+'/'+stat.total+')';
-   if(count&&count.textContent!==value)count.textContent=value;
+   const count=header.querySelector('.dw2rl-regex-count'),x=stat.get(header.dataset.groupId)||{on:0,total:0};
+   const label='('+x.on+'/'+x.total+')';
+   if(count&&count.textContent!==label)count.textContent=label;
   }
  }
  function clear(root){
-   root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline').forEach(x=>x.remove());
-   for(const row of nativeRows(root))row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
+  unbindGroupDrag(root);
+  root.querySelectorAll(':scope > .dw2rl-regex-header, :scope > .dw2rl-regex-outline').forEach(x=>x.remove());
+  root.classList.remove('dw2rl-regex-logical');
+  root.style.removeProperty('display');root.style.removeProperty('flex-direction');
+  for(const row of nativeRows(root)){
+   row.style.removeProperty('order');
+   delete row.dataset.dw2rlFolderId;
+   row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
+  }
  }
+
  function showDialog(title,initial,onSave,{confirmOnly=false,confirmText='保存'}={}){
    dialog?.remove();const modal=node('div','dw2rl-regex-dialog-backdrop');
    const form=node('form','dw2rl-regex-dialog');
@@ -386,10 +445,7 @@ export function createRegexFolders({enabled,getState,save,context}){
   for(const root of mounted){
    if(live.has(root))continue;
    observers.get(root)?.disconnect();observers.delete(root);
-   if(transfers.has(root)){
-     (globalThis.jQuery||globalThis.$)?.(root).off('.dw2rlRegexTransfer');
-     transfers.delete(root);sortStarts.delete(root);
-   }
+   clear(root);
    if(outlineFrames.has(root))cancelAnimationFrame(outlineFrames.get(root));
    outlineFrames.delete(root);snapshots.delete(root);mounted.delete(root);
   }

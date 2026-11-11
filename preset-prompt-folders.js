@@ -23,6 +23,7 @@ export function normalizeLegacyGroups(raw,validIds){
 }
 export function createPromptFolders({enabled,getState,save,context,getActivePromptIds}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
+  let microtaskPending=false,sorting=false;
   const folderCollapsed=new Map();
   let lastRenderedRows=[],lastRenderedList=null,lastToolbarSignature='';
   let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
@@ -145,7 +146,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
         return [...change.addedNodes,...change.removedNodes].some(node=>
           node.nodeType===1&&node.matches?.('li.completion_prompt_manager_prompt'));
       });
-      if(nativeChanged){render();return;}
+      if(nativeChanged){schedule();return;}
       // TT can also flip a toggle icon's class in place. Refresh counters
       // without destroying the list or its folder headers.
       if(changes.some(change=>change.type==='attributes'&&
@@ -177,7 +178,10 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     dragBound=list;
     const jq=globalThis.jQuery||globalThis.$;
     if(!jq)return;
+    jq(list).on('sortstart.dw2rlPromptTransfer',()=>{sorting=true;});
     jq(list).on('sortstop.dw2rlPromptTransfer',(event,ui)=>{
+      sorting=false;
+      schedule();
       const moved=ui?.item?.[0];const id=safe(moved?.dataset?.pmIdentifier);
       if(!id || !list.contains(moved))return;
       const state=currentRecord();
@@ -373,7 +377,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     pending=null;save();render();
   }
   function render(){
-    if(building)return;
+    if(building||sorting)return;
     if(!enabled())return disable();
     const list=doc().getElementById('completion_prompt_manager_list');
     if(!list)return;
@@ -429,10 +433,14 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     }finally{building=false;}
   }
   function schedule(){
-    if(timer)clearTimeout(timer);
-    // TT rebuilds native prompt rows while saving edits. Defer repaint
-    // until its own rerender settles; don't flash ungrouped rows midway.
-    timer=setTimeout(()=>{timer=0;render();},35);
+    // Batch native TT changes in one microtask, before browser paint.
+    // Avoid the old 35ms pause which could briefly reveal ungrouped rows.
+    if(microtaskPending)return;
+    microtaskPending=true;
+    queueMicrotask(()=>{
+      microtaskPending=false;
+      if(enabled()&&!sorting)render();
+    });
   }
   function prepare(){
     // React after native TT row replacement. Never hide the entire prompt list:
@@ -441,6 +449,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   }
   function disable(){
     if(timer)clearTimeout(timer);timer=0;
+    microtaskPending=false;sorting=false;
     clearInline(records());
     if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
     renderObserver?.disconnect();renderObserver=null;observedList=null;

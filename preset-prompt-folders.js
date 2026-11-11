@@ -477,6 +477,33 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     }
     return changed;
   }
+  // TT builds #completion_prompt_manager_footer_append_prompt from its
+  // current non-system prompt definitions only during renderPromptManager().
+  // DW2 intentionally avoids that entire redraw when deleting one row, so
+  // reconcile the existing native <select> in place after a permanent delete.
+  // This also clears older stale options left by previous 0.1.50 deletions.
+  function syncNativePromptPicker(pm){
+    const select=doc().getElementById('completion_prompt_manager_footer_append_prompt');
+    if(!select||!Array.isArray(pm?.serviceSettings?.prompts))return;
+    const selectedId=String(select.value||'');
+    const previousIndex=select.selectedIndex;
+    const definitions=pm.serviceSettings.prompts
+      .filter(prompt=>prompt&&!prompt.system_prompt)
+      .sort((a,b)=>String(a.name??'').localeCompare(String(b.name??'')));
+    const options=definitions.map(prompt=>{
+      const option=doc().createElement('option');
+      option.value=String(prompt.identifier??'');
+      option.textContent=String(prompt.name??'');
+      return option;
+    });
+    select.replaceChildren(...options);
+    if(options.some(option=>option.value===selectedId)){
+      select.value=selectedId;
+    }else{
+      select.selectedIndex=options.length
+        ?Math.min(Math.max(0,previousIndex),options.length-1):-1;
+    }
+  }
   function performPromptTrash(id,mode,presetAtOpen,characterAtOpen){
     const pm=promptManagerApi;
     if(!enabled()||!pm||presetName()!==presetAtOpen||
@@ -492,6 +519,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       for(const order of pm.serviceSettings.prompt_order)
         removePromptReferences(order?.order,id);
       removePromptReferences(active,id);
+      syncNativePromptPicker(pm);
     }else if(mode==='detach'){
       // Only remove the current prompt-order membership; its definition is
       // retained and can be re-added via TT's native prompt editor.

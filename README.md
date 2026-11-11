@@ -1,3 +1,5 @@
+# DW2 · Resource Library（资源分类）
+
 ## v0.1.42-beta.1 · 分组交互优化（仅逻辑，外观不变）
 
 - 预设分组：原生列表变化使用微任务合并更新，取消固定 35 毫秒等待；拖拽时避免插件与 TT 同时重绘。
@@ -7,7 +9,7 @@
 - 视觉不变：完全保留原有 style.css、细边框、透明底、文件夹按钮及排版。
 - 仍需在 TT iPhone 上验证折叠、拖拽、跨预设切换及开关；这不是实机通过的声明。
 
-# DW2 · Resource Library（资源分类）
+
 
 ## 版权与使用限制 · PRIVATE PROJECT / ALL RIGHTS RESERVED
 
@@ -27,7 +29,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.40-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.42-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

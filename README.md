@@ -1,5 +1,14 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.47-beta.1 · 安卓预设单条开关的二次滚动校正
+
+- 继承 v0.1.46 对安卓折叠跳动的处理；修复在 TT 原生列表重新生成、又恢复旧滚动位置之后仍可能发生的短距离上跳。
+- 只在 Android 点击原生预设条目开关时开启临时滚动保护：保持列表高度、暂时改用即时滚动并关闭浏览器自动滚动锚定，避免和 DW2 的定位修正互相干扰。
+- 原生行更换后不再只校正一帧，而是在最多 12 次动画帧内短暂追踪被点击的条目，并在末尾额外进行一次延迟校正，处理 TT 较晚的 scrollTo。
+- 有后续触摸、指针或鼠标滚轮操作时立即撤销保护，避免与用户主动滚动抢控制；保护结束、切换预设、关闭扩展或超时时精确恢复原有内联滚动样式和列表高度。
+- 折叠分组仍保持原本的单帧定位；iOS 不启用这些临时滚动处理。正则分组逻辑与外观 CSS 文件不改。
+- 测试包含原生列表替换、TT 后续覆盖滚动位置、恢复用户原有滚动样式、手势取消保护、分组折叠及 iOS 无影响；安卓实机仍需最后验证。
+
 ## v0.1.46-beta.1 · 安卓预设分组开关与折叠时的跳动修复
 
 - TT 原生 PromptManager 点击条目开关时会异步清空并重新生成原生提示词列表，安卓 WebView 可能在列表暂时为空时压缩滚动区域，随后重新计算并调整滚动位置。
@@ -67,7 +76,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.46-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.47-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

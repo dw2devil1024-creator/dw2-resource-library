@@ -1,5 +1,13 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.49-beta.1 · iOS 与 Android 统一原地开关
+
+- 将 v0.1.48 安卓预设提示词的原地开关处理扩展到 iPhone 与 iPad 的移动端 TT，保留相同的原生 PromptManager 状态读写、开关图标及禁用样式、token 缓存失效和原生设置保存行为。
+- 适用范围为开启 DW2 预设分组、且原生 PromptManager API 可安全确认的移动端开关。普通桌面浏览器保持 TT 原生处理流程。
+- 若 TT 版本缺失相关原生接口或当前条目不允许切换，则不拦截点击：iOS 返回原生处理；Android 继续沿用之前的滚动回退。
+- 保留全部折叠外观、正则分组、预设文件夹数据及排序逻辑，CSS、regex-folders.js 不改动。
+- 这不是删除、编辑或额外操作按钮，而是原有启用/停用按钮的内部响应方式更新。两端仍需实机验证开关保存、刷新后状态与分组计数。
+
 ## v0.1.48-beta.1 · 安卓预设单条开关原地更新（绕开原生整表重绘）
 
 - 根因对照：TT 原生 PromptManager 的开关监听器在切换启用状态后调用 renderDebounced()，随后清空并重建整张提示词列表；旧 DW2 的滚动校正无法保证阻止安卓 WebView 的持续上跳。柏宝箱预设优化则从点击委托层更新原始开关数据和已渲染行，规避这一整表重绘路径；本版独立实现同一思路，不复制第三方源码。
@@ -85,7 +93,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.48-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.49-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

@@ -28,7 +28,7 @@ export function findLegacyScopedRegexFolder(folders,visibleIds){
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();let listening=false;let refreshToken=0;
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const transfers=new Set(),sortStarts=new WeakMap();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -56,6 +56,43 @@ export function createRegexFolders({enabled,getState,save,context}){
    }
    state.regexFolders[scope]??={groups:[],entries:{}};
    return state.regexFolders[scope];
+ }
+ function groupAtDrop(moved,entries,validIds){
+   let previous=moved?.previousElementSibling;
+   while(previous && !previous.classList.contains('regex-script-label') &&
+     !previous.classList.contains('dw2rl-regex-header')){
+     previous=previous.previousElementSibling;
+   }
+   if(!previous)return '';
+   const target=previous.classList.contains('dw2rl-regex-header')
+     ? previous.dataset.groupId : entries[previous.id];
+   return validIds.has(target)?target:'';
+ }
+ function bindSort(scope,root){
+   if(transfers.has(root))return;
+   const jq=globalThis.jQuery||globalThis.$;
+   if(typeof jq!=='function')return;
+   transfers.add(root);
+   jq(root).on('sortstart.dw2rlRegexTransfer',(event,ui)=>{
+     const moved=ui?.item?.[0];
+     sortStarts.set(root,{id:moved?.id,ids:nativeRows(root).map(row=>row.id)});
+   });
+   jq(root).on('sortstop.dw2rlRegexTransfer',(event,ui)=>{
+     const before=sortStarts.get(root);sortStarts.delete(root);
+     const moved=ui?.item?.[0];
+     if(!before||!moved?.id||before.id!==moved.id)return;
+     const now=nativeRows(root).map(row=>row.id);
+     if(before.ids.indexOf(moved.id)===now.indexOf(moved.id))return;
+     const key=scopeKey(scope);
+     if(!key)return;
+     const r=record(key),valid=new Set(r.groups.map(g=>g.id));
+     const next=groupAtDrop(moved,r.entries,valid);
+     if((r.entries[moved.id]||'')===next)return;
+     if(next)r.entries[moved.id]=next;
+     else delete r.entries[moved.id];
+     save();
+     schedule();
+   });
  }
  function nativeRows(root){return [...root.children].filter(x=>x.classList?.contains('regex-script-label')&&x.id);}
  function refreshCounts(root,rows,data){
@@ -94,6 +131,7 @@ export function createRegexFolders({enabled,getState,save,context}){
   const key=scopeKey(scope);
   if(!key){clear(root);snapshots.delete(root);return;}
   const rows=nativeRows(root);if(!rows.length){clear(root);snapshots.delete(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();return;}
+  bindSort(scope,root);
   const r=record(key),validGroups=new Map(r.groups.map(g=>[g.id,g.name]));
   const signature=key+'|'+r.groups.map(g=>g.id+':'+g.name).join('~')+'|'+rows.map(row=>row.id+':'+(r.entries[row.id]||'')).join('~');
   const old=snapshots.get(root);
@@ -330,6 +368,10 @@ export function createRegexFolders({enabled,getState,save,context}){
   for(const root of mounted){
    if(live.has(root))continue;
    observers.get(root)?.disconnect();observers.delete(root);
+   if(transfers.has(root)){
+     (globalThis.jQuery||globalThis.$)?.(root).off('.dw2rlRegexTransfer');
+     transfers.delete(root);sortStarts.delete(root);
+   }
    if(outlineFrames.has(root))cancelAnimationFrame(outlineFrames.get(root));
    outlineFrames.delete(root);snapshots.delete(root);mounted.delete(root);
   }
@@ -347,6 +389,10 @@ export function createRegexFolders({enabled,getState,save,context}){
   outlineFrames.clear();
   dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;
   for(const root of mounted){
+   if(transfers.has(root)){
+     (globalThis.jQuery||globalThis.$)?.(root).off('.dw2rlRegexTransfer');
+     transfers.delete(root);sortStarts.delete(root);
+   }
    clear(root);snapshots.delete(root);
    root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
    for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-picker')?.remove();

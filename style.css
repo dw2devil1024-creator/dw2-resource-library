@@ -962,3 +962,12 @@ select.dw2rl-native-hidden {
   -webkit-user-select: none !important;
   user-select: none !important;
 }
+
+/* v0.1.45: subtle unframed loose-script drop target, not a folder. */
+#regex_container .regex-script-container > .dw2rl-regex-free-drop{
+  display:block;order:99999;min-height:23px;box-sizing:border-box;
+  padding:8px 8px 5px;margin:10px 0 2px;
+  background:transparent;border:0;box-shadow:none;
+  color:var(--SmartThemeBodyColor,inherit);font-size:10px;opacity:.65;
+  text-align:center;user-select:none;-webkit-user-select:none;
+}

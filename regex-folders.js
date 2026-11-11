@@ -1,4 +1,30 @@
 /* DW2 regex folders: presentation metadata only, no regex mutation. */
+// The TT character's avatar identifies the same card across chat saves.
+// A list index can change when cards are imported, removed, or re-ordered.
+export function stableScopedRegexFolderKey(ctx){
+ const id=ctx?.characterId ?? ctx?.this_chid;
+ const avatar=String(ctx?.characters?.[id]?.avatar ?? ctx?.characters?.[id]?.data?.avatar ?? '').trim();
+ if(!avatar)return id!==undefined&&id!==null&&String(id)!==''?'scoped:'+String(id):'';
+ let h1=0x811c9dc5,h2=0x9e3779b9;
+ for(let i=0;i<avatar.length;i++){
+   const c=avatar.charCodeAt(i);
+   h1=Math.imul(h1^c,0x01000193);
+   h2=Math.imul(h2^c,0x85ebca6b);
+ }
+ return 'scoped:char_'+(h1>>>0).toString(16).padStart(8,'0')+(h2>>>0).toString(16).padStart(8,'0');
+}
+// Only import a legacy numeric scope with unambiguous matching regex IDs.
+// The old record stays untouched and serves as a rollback backup.
+export function findLegacyScopedRegexFolder(folders,visibleIds){
+ const ids=new Set(visibleIds||[]);
+ if(!folders||!ids.size)return null;
+ const candidates=Object.entries(folders)
+  .filter(([key,r])=>/^scoped:\d+$/.test(key)&&Array.isArray(r?.groups))
+  .map(([key,r])=>({key,record:r,score:Object.keys(r.entries||{}).filter(id=>ids.has(id)).length}))
+  .filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+ return candidates.length===1||candidates[0]?.score>candidates[1]?.score?candidates[0]||null:null;
+}
+
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
@@ -12,11 +38,22 @@ export function createRegexFolders({enabled,getState,save,context}){
      const preset=String(ctx.getPresetManager?.('openai')?.getSelectedPresetName?.()||document.querySelector('#openai_api-presets select')?.selectedOptions?.[0]?.textContent||'').trim();
      return preset?'preset:'+preset.slice(0,150):'';
    }
-   const charId=ctx.characterId ?? ctx.this_chid;
-   return charId!==undefined && charId!==null && String(charId)!==''?'scoped:'+String(charId):'';
+   return stableScopedRegexFolderKey(ctx);
  }
  function record(scope){
    const state=getState();state.regexFolders??={};
+   if(!state.regexFolders[scope] && scope.startsWith('scoped:char_')){
+     const root=document.querySelector('#saved_scoped_scripts');
+     const rows=root?nativeRows(root):[];
+     const legacy=findLegacyScopedRegexFolder(state.regexFolders,rows.map(row=>row.id));
+     if(legacy){
+       state.regexFolders[scope]={
+         groups:legacy.record.groups.map(group=>({...group})),
+         entries:{...(legacy.record.entries||{})},
+       };
+       save();
+     }
+   }
    state.regexFolders[scope]??={groups:[],entries:{}};
    return state.regexFolders[scope];
  }
@@ -316,5 +353,14 @@ export function createRegexFolders({enabled,getState,save,context}){
   }
   mounted.clear();
  }
- return {sync,prepare:schedule,disable};
+ function getGroupSnapshot(scope){
+   if(!enabled())return null;
+   const key=scopeKey(scope);
+   if(!key)return null;
+   const current=getState().regexFolders?.[key];
+   return {key,groups:Array.isArray(current?.groups)
+     ? current.groups.map(g=>({id:g.id,name:g.name})):[],
+     entries:{...(current?.entries||{})}};
+ }
+ return {sync,prepare:schedule,disable,getGroupSnapshot};
 }

@@ -222,6 +222,10 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     }
     const rec=currentRecord();
     if(rec)updateGroupCounts(records(),pending||rec);
+    // The native click cannot bubble to Preset Console because it was
+    // intercepted to prevent TT's full rerender. Notify its live bridge
+    // explicitly so Quick View reflects the switch without its polling delay.
+    window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
     try{
       Promise.resolve(pm.saveServiceSettings()).catch(error=>
         console.warn('[DW2 Resource Library] Native prompt setting save failed',error));

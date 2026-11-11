@@ -26,7 +26,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   let microtaskPending=false,sorting=false;
   const folderCollapsed=new Map();
   let lastRenderedRows=[],lastRenderedList=null,lastToolbarSignature='';
-  let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false;
+  let selecting=false,first='',pending=null,dialog=null,dragBound=null,renderObserver=null,observedList=null,building=false,trashBound=null;
   const doc=()=>document;
   // Android WebView: TT's PromptManager clears and rebuilds its entire
   // list after every native enable/disable toggle. While empty the scrolling
@@ -420,6 +420,175 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       schedule();
     });
   }
+
+  // TT renders a native 'detach' icon only for deletable (non-system)
+  // prompts. Reuse that exact icon slot as a trash action; retain its
+  // original node and native click listener so disabling DW2 restores TT.
+  function decoratePromptTrashRows(rows){
+    if(!enabled())return;
+    const pm=promptManagerApi;
+    if(!pm||typeof pm.getPromptById!=='function'||
+       typeof pm.getPromptOrderForCharacter!=='function'||
+       typeof pm.isPromptDeletionAllowed!=='function'||
+       typeof pm.saveServiceSettings!=='function')return;
+    for(const row of rows){
+      const icon=row.querySelector('.prompt-manager-detach-action');
+      if(!icon||icon.classList.contains('dw2rl-prompt-trash-action'))continue;
+      const prompt=pm.getPromptById(safe(row.dataset.pmIdentifier));
+      if(!prompt||pm.isPromptDeletionAllowed(prompt)!==true)continue;
+      icon.dataset.dw2rlPromptOriginalTitle=icon.getAttribute('title')??'';
+      icon.classList.remove('fa-chain-broken');
+      icon.classList.add('fa-trash','dw2rl-prompt-trash-action');
+      icon.setAttribute('title','删除或移除提示词');
+      icon.setAttribute('aria-label','删除或移除提示词');
+      icon.setAttribute('role','button');
+      icon.setAttribute('tabindex','0');
+    }
+  }
+  function restorePromptTrashRows(rows){
+    for(const row of rows){
+      const icon=row.querySelector('.dw2rl-prompt-trash-action');
+      if(!icon)continue;
+      icon.classList.remove('dw2rl-prompt-trash-action','fa-trash');
+      icon.classList.add('fa-chain-broken');
+      icon.setAttribute('title',icon.dataset.dw2rlPromptOriginalTitle??'Remove');
+      delete icon.dataset.dw2rlPromptOriginalTitle;
+      icon.removeAttribute('aria-label');
+      icon.removeAttribute('role');
+      icon.removeAttribute('tabindex');
+    }
+  }
+  function promptTrashEligible(pm,id){
+    if(!pm?.activeCharacter||!Array.isArray(pm.serviceSettings?.prompts)||
+       typeof pm.getPromptById!=='function'||
+       typeof pm.isPromptDeletionAllowed!=='function'||
+       typeof pm.getPromptOrderForCharacter!=='function'||
+       typeof pm.saveServiceSettings!=='function')return false;
+    const prompt=pm.getPromptById(id);
+    if(!prompt||pm.isPromptDeletionAllowed(prompt)!==true)return false;
+    const order=pm.getPromptOrderForCharacter(pm.activeCharacter);
+    return Array.isArray(order)&&order.some(item=>item?.identifier===id);
+  }
+  function removePromptReferences(order,id){
+    if(!Array.isArray(order))return false;
+    let changed=false;
+    for(let i=order.length-1;i>=0;i--){
+      if(order[i]?.identifier===id){order.splice(i,1);changed=true;}
+    }
+    return changed;
+  }
+  function performPromptTrash(id,mode,presetAtOpen,characterAtOpen){
+    const pm=promptManagerApi;
+    if(!enabled()||!pm||presetName()!==presetAtOpen||
+       String(pm.activeCharacter?.id)!==characterAtOpen||
+       !promptTrashEligible(pm,id))return false;
+    const active=pm.getPromptOrderForCharacter(pm.activeCharacter);
+    if(mode==='delete'){
+      // Complete deletion removes the definition and all references within
+      // this preset's native serviceSettings. Do not mutate any other preset.
+      const index=pm.serviceSettings.prompts.findIndex(item=>item?.identifier===id);
+      if(index<0||!Array.isArray(pm.serviceSettings?.prompt_order))return false;
+      pm.serviceSettings.prompts.splice(index,1);
+      for(const order of pm.serviceSettings.prompt_order)
+        removePromptReferences(order?.order,id);
+      removePromptReferences(active,id);
+    }else if(mode==='detach'){
+      // Only remove the current prompt-order membership; its definition is
+      // retained and can be re-added via TT's native prompt editor.
+      removePromptReferences(active,id);
+    }else return false;
+    const rec=currentRecord();
+    if(rec){
+      delete rec.entries[id];
+      rec.embeddedImportHandled=true;
+    }
+    if(pending?.entries)delete pending.entries[id];
+    if(first===id)first='';
+    if(mode==='delete'){
+      try{
+        const counts=pm.tokenHandler?.getCounts?.();
+        if(counts)delete counts[id];
+      }catch(error){console.debug('[DW2 Prompt Trash] Token cache cleanup skipped',error);}
+    }
+    for(const row of records())
+      if(safe(row.dataset.pmIdentifier)===id)row.remove();
+    save(); // DW2 group membership and console snapshot refresh.
+    render(); // Rebuild folder captions only; native TT rows stay mounted.
+    try{
+      Promise.resolve(pm.saveServiceSettings()).catch(error=>{
+        console.warn('[DW2 Prompt Trash] Native preset save failed',error);
+        globalThis.toastr?.error?.('预设保存失败，请检查设置和备份');
+      });
+    }catch(error){
+      console.warn('[DW2 Prompt Trash] Native preset save failed',error);
+      globalThis.toastr?.error?.('预设保存失败，请检查设置和备份');
+    }
+    return true;
+  }
+  function openPromptTrashDialog(row){
+    const id=safe(row?.dataset.pmIdentifier);
+    const pm=promptManagerApi;
+    if(!id||!promptTrashEligible(pm,id))return;
+    const presetAtOpen=presetName(),characterAtOpen=String(pm.activeCharacter.id);
+    if(!presetAtOpen)return;
+    const name=safe(pm.getPromptById(id)?.name)||id;
+    const anchor=doc().getElementById('completion_prompt_manager');
+    if(!anchor?.isConnected)return;
+    dialog?.remove();
+    const backdrop=el('div','dw2rl-prompt-dialog-backdrop');
+    const box=el('div','dw2rl-prompt-dialog');
+    box.append(
+      el('div','dw2rl-prompt-dialog-title','处理提示词条目'),
+      el('div','dw2rl-prompt-delete-name',name),
+      el('div','dw2rl-prompt-delete-description',
+        '「仅移除」保留提示词本体，可以重新添加；「彻底删除」会从当前预设删除提示词本体及其引用，需要备份才能恢复。')
+    );
+    const actions=el('div','dw2rl-prompt-dialog-actions dw2rl-prompt-delete-actions');
+    const close=()=>{backdrop.remove();if(dialog===backdrop)dialog=null;};
+    actions.append(
+      btn('取消',close),
+      btn('仅移除',()=>{
+        if(performPromptTrash(id,'detach',presetAtOpen,characterAtOpen))close();
+        else{close();globalThis.toastr?.warning?.('预设已变化或条目不可移除');}
+      }),
+      btn('彻底删除',()=>{
+        if(performPromptTrash(id,'delete',presetAtOpen,characterAtOpen))close();
+        else{close();globalThis.toastr?.warning?.('预设已变化或条目不可删除');}
+      },'dw2rl-prompt-dialog-submit dw2rl-danger')
+    );
+    box.append(actions);backdrop.append(box);
+    anchor.append(backdrop);dialog=backdrop;
+    for(const kind of ['pointerdown','pointerup','touchstart','touchend','mousedown','mouseup','click'])
+      backdrop.addEventListener(kind,event=>event.stopPropagation());
+    backdrop.addEventListener('click',event=>{
+      if(event.target===backdrop){event.preventDefault();close();}
+    });
+  }
+  function capturePromptTrash(event){
+    const icon=event.target?.closest?.('.dw2rl-prompt-trash-action');
+    if(!icon||!trashBound?.contains(icon)||!enabled())return;
+    const row=icon.closest('li.completion_prompt_manager_prompt');
+    if(!row)return;
+    // Stop TT's original detach listener before it can run.
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    openPromptTrashDialog(row);
+  }
+  function capturePromptTrashKey(event){
+    if(event.key!=='Enter'&&event.key!==' ')return;
+    if(!event.target?.matches?.('.dw2rl-prompt-trash-action'))return;
+    capturePromptTrash(event);
+  }
+  function bindPromptTrash(list){
+    if(trashBound===list)return;
+    if(trashBound){
+      trashBound.removeEventListener('click',capturePromptTrash,true);
+      trashBound.removeEventListener('keydown',capturePromptTrashKey,true);
+    }
+    trashBound=list;
+    list.addEventListener('click',capturePromptTrash,true);
+    list.addEventListener('keydown',capturePromptTrashKey,true);
+  }
+
   function showRows(rows,record){
     clearInline(rows);
     const effective=pending||record;
@@ -609,7 +778,15 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const list=doc().getElementById('completion_prompt_manager_list');
     if(!list)return;
     const rows=records(),rec=currentRecord();
-    if(!rec||!rows.length)return;
+    if(!rec)return;
+    if(!rows.length){
+      // A deletion may remove the final native prompt. Do not leave a
+      // detached folder header or a stale count above the empty list.
+      clearInline(rows);
+      toolbar?.remove();toolbar=null;
+      lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
+      return;
+    }
     building=true;
     try{
     // Restore embedded groups of THIS preset only, without altering TT prompts.
@@ -626,6 +803,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     bindSort(list);
     observeNativeRows(list);
     bindNativeToggleGuard(list);
+    bindPromptTrash(list);
     const toolbarSignature=JSON.stringify([currentPreset,selecting,first,rows.length]);
     const toolbarChanged=lastToolbarSignature!==toolbarSignature;
     if(toolbarChanged){
@@ -650,6 +828,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     }else{
       updateGroupCounts(rows,effective);
     }
+    decoratePromptTrashRows(rows);
     if(viewportGuard?.type==='prompt'&&viewportGuard.list===list){
       const newAnchor=anchorForGuard(viewportGuard);
       if(newAnchor&&newAnchor!==viewportGuard.originalNode)settleViewportGuard();
@@ -685,6 +864,12 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     releaseViewportGuard();
     if(guardedList)guardedList.removeEventListener('click',captureNativeToggle,true);
     guardedList=null;
+    if(trashBound){
+      trashBound.removeEventListener('click',capturePromptTrash,true);
+      trashBound.removeEventListener('keydown',capturePromptTrashKey,true);
+      trashBound=null;
+    }
+    restorePromptTrashRows(records());
     clearInline(records());
     if(dragBound){(globalThis.jQuery||globalThis.$)?.(dragBound).off('.dw2rlPromptTransfer');dragBound=null;}
     renderObserver?.disconnect();renderObserver=null;observedList=null;

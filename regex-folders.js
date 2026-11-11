@@ -1,8 +1,34 @@
 /* DW2 regex folders: presentation metadata only, no regex mutation. */
+// The TT character's avatar identifies the same card across chat saves.
+// A list index can change when cards are imported, removed, or re-ordered.
+export function stableScopedRegexFolderKey(ctx){
+ const id=ctx?.characterId ?? ctx?.this_chid;
+ const avatar=String(ctx?.characters?.[id]?.avatar ?? ctx?.characters?.[id]?.data?.avatar ?? '').trim();
+ if(!avatar)return id!==undefined&&id!==null&&String(id)!==''?'scoped:'+String(id):'';
+ let h1=0x811c9dc5,h2=0x9e3779b9;
+ for(let i=0;i<avatar.length;i++){
+   const c=avatar.charCodeAt(i);
+   h1=Math.imul(h1^c,0x01000193);
+   h2=Math.imul(h2^c,0x85ebca6b);
+ }
+ return 'scoped:char_'+(h1>>>0).toString(16).padStart(8,'0')+(h2>>>0).toString(16).padStart(8,'0');
+}
+// Only import a legacy numeric scope with unambiguous matching regex IDs.
+// The old record stays untouched and serves as a rollback backup.
+export function findLegacyScopedRegexFolder(folders,visibleIds){
+ const ids=new Set(visibleIds||[]);
+ if(!folders||!ids.size)return null;
+ const candidates=Object.entries(folders)
+  .filter(([key,r])=>/^scoped:\d+$/.test(key)&&Array.isArray(r?.groups))
+  .map(([key,r])=>({key,record:r,score:Object.keys(r.entries||{}).filter(id=>ids.has(id)).length}))
+  .filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+ return candidates.length===1||candidates[0]?.score>candidates[1]?.score?candidates[0]||null:null;
+}
+
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();let listening=false;let refreshToken=0;
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const transfers=new Set(),sortStarts=new WeakMap();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -12,13 +38,72 @@ export function createRegexFolders({enabled,getState,save,context}){
      const preset=String(ctx.getPresetManager?.('openai')?.getSelectedPresetName?.()||document.querySelector('#openai_api-presets select')?.selectedOptions?.[0]?.textContent||'').trim();
      return preset?'preset:'+preset.slice(0,150):'';
    }
-   const charId=ctx.characterId ?? ctx.this_chid;
-   return charId!==undefined && charId!==null && String(charId)!==''?'scoped:'+String(charId):'';
+   return stableScopedRegexFolderKey(ctx);
  }
  function record(scope){
    const state=getState();state.regexFolders??={};
+   if(!state.regexFolders[scope] && scope.startsWith('scoped:char_')){
+     const root=document.querySelector('#saved_scoped_scripts');
+     const rows=root?nativeRows(root):[];
+     const ctx=context?.()||{},id=ctx.characterId ?? ctx.this_chid;
+     const cardScripts=ctx.characters?.[id]?.data?.extensions?.regex_scripts||[];
+     const visibleIds=rows.map(row=>row.id);
+     for(const script of Array.isArray(cardScripts)?cardScripts:[]){
+       if(script?.id)visibleIds.push(String(script.id));
+     }
+     const legacy=findLegacyScopedRegexFolder(state.regexFolders,visibleIds);
+     if(legacy){
+       state.regexFolders[scope]={
+         groups:legacy.record.groups.map(group=>({...group})),
+         entries:{...(legacy.record.entries||{})},
+       };
+       save();
+     }
+   }
    state.regexFolders[scope]??={groups:[],entries:{}};
    return state.regexFolders[scope];
+ }
+ function groupAtDrop(moved,entries,validIds){
+   const meaningful=node=>node?.classList?.contains('regex-script-label') ||
+     node?.classList?.contains('dw2rl-regex-header');
+   let prev=moved?.previousElementSibling,next=moved?.nextElementSibling;
+   while(prev&&!meaningful(prev))prev=prev.previousElementSibling;
+   while(next&&!meaningful(next))next=next.nextElementSibling;
+   const group=node=>{
+     if(!node)return '';
+     const id=node.classList.contains('dw2rl-regex-header')
+       ? node.dataset.groupId : entries[node.id];
+     return validIds.has(id)?id:'';
+   };
+   const before=group(prev),after=group(next);
+   if(prev?.classList.contains('dw2rl-regex-header'))return before;
+   return before&&before===after?before:'';
+ }
+ function bindSort(scope,root){
+   if(transfers.has(root))return;
+   const jq=globalThis.jQuery||globalThis.$;
+   if(typeof jq!=='function')return;
+   transfers.add(root);
+   jq(root).on('sortstart.dw2rlRegexTransfer',(event,ui)=>{
+     const moved=ui?.item?.[0];
+     sortStarts.set(root,{id:moved?.id,ids:nativeRows(root).map(row=>row.id)});
+   });
+   jq(root).on('sortstop.dw2rlRegexTransfer',(event,ui)=>{
+     const before=sortStarts.get(root);sortStarts.delete(root);
+     const moved=ui?.item?.[0];
+     if(!before||!moved?.id||before.id!==moved.id)return;
+     const now=nativeRows(root).map(row=>row.id);
+     if(before.ids.indexOf(moved.id)===now.indexOf(moved.id))return;
+     const key=scopeKey(scope);
+     if(!key)return;
+     const r=record(key),valid=new Set(r.groups.map(g=>g.id));
+     const next=groupAtDrop(moved,r.entries,valid);
+     if((r.entries[moved.id]||'')===next)return;
+     if(next)r.entries[moved.id]=next;
+     else delete r.entries[moved.id];
+     save();
+     schedule();
+   });
  }
  function nativeRows(root){return [...root.children].filter(x=>x.classList?.contains('regex-script-label')&&x.id);}
  function refreshCounts(root,rows,data){
@@ -57,6 +142,7 @@ export function createRegexFolders({enabled,getState,save,context}){
   const key=scopeKey(scope);
   if(!key){clear(root);snapshots.delete(root);return;}
   const rows=nativeRows(root);if(!rows.length){clear(root);snapshots.delete(root);root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();return;}
+  bindSort(scope,root);
   const r=record(key),validGroups=new Map(r.groups.map(g=>[g.id,g.name]));
   const signature=key+'|'+r.groups.map(g=>g.id+':'+g.name).join('~')+'|'+rows.map(row=>row.id+':'+(r.entries[row.id]||'')).join('~');
   const old=snapshots.get(root);
@@ -86,11 +172,13 @@ export function createRegexFolders({enabled,getState,save,context}){
   toolbar.append(newGroup,node('small','','仅整理界面 · 不改变正则执行与启用状态'));
   }
   let last='';
-  const runs=[];
+  const runs=[],seenGroups=new Set();
   rows.forEach((row,index)=>{
     const gid=validGroups.has(r.entries[row.id])?r.entries[row.id]:'';
     if(gid!==last&&gid){
+      const continuation=seenGroups.has(gid);
       const saved=previous.find(run=>run.first===row && run.gid===gid &&
+        !!run.continuation===continuation &&
         run.header.parentElement===root && run.outline?.parentElement===root);
       const header=saved?.header||node('div','dw2rl-regex-header');
       const collapseKey=key+':'+gid;
@@ -107,11 +195,13 @@ export function createRegexFolders({enabled,getState,save,context}){
             if(h.dataset.folderKey!==collapseKey)return;
             h.dataset.collapsed=String(next);
             const t=h.querySelector('.dw2rl-regex-folder-name');
-            if(t)t.textContent=(next?'▸ ':'▾ ')+(state.groups.find(g=>g.id===gid)?.name||'');
+            if(t)t.textContent=(next?'▸ ':'▾ ')+(h.dataset.continuation==='true'?'↳ ':'')+(state.groups.find(g=>g.id===gid)?.name||'')+(h.dataset.continuation==='true'?' · 续':'');
           });
           updateOutlines(root);
         },'dw2rl-regex-folder-name');
-        header.append(toggle,node('small','dw2rl-regex-count',''));
+        header.append(toggle);
+        if(!continuation){
+        header.append(node('small','dw2rl-regex-count',''));
         header.append(btn('✎',()=>{
           const state=record(key);
           const current=state.groups.find(g=>g.id===gid)?.name;
@@ -135,18 +225,20 @@ export function createRegexFolders({enabled,getState,save,context}){
             save();return true;
           },{confirmOnly:true,confirmText:'删除文件夹'});
         }));
+        }
       }
       header.dataset.collapsed=String(isCollapsed(collapseKey));
       header.dataset.folderKey=collapseKey;
       header.dataset.groupId=gid;
+      header.dataset.continuation=String(continuation);
       const title=header.querySelector('.dw2rl-regex-folder-name');
-      if(title)title.textContent=(isCollapsed(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid);
+      if(title)title.textContent=(isCollapsed(collapseKey)?'▸ ':'▾ ')+(continuation?'↳ ':'')+validGroups.get(gid)+(continuation?' · 续':'');
       const members=rows.filter(x=>r.entries[x.id]===gid);
       const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
       const counter=header.querySelector('.dw2rl-regex-count');
       if(counter)counter.textContent='('+active+'/'+members.length+')';
       if(header.nextElementSibling!==row)root.insertBefore(header,row);
-      runs.push({header,first:row,last:row,key:collapseKey,gid,saved});
+      runs.push({header,first:row,last:row,key:collapseKey,gid,continuation,saved});
       usedHeaders.add(header);
     }
     // Move-to-folder menu belongs to the row and uses a native <select>,
@@ -213,6 +305,7 @@ export function createRegexFolders({enabled,getState,save,context}){
       const run=runs[runs.length-1];if(run)run.last=row;
     }
     if(gid&&isCollapsed(key+':'+gid))row.classList.add('dw2rl-regex-collapsed');
+    if(gid)seenGroups.add(gid);
     last=gid;
   });
   for(const run of runs){
@@ -293,6 +386,10 @@ export function createRegexFolders({enabled,getState,save,context}){
   for(const root of mounted){
    if(live.has(root))continue;
    observers.get(root)?.disconnect();observers.delete(root);
+   if(transfers.has(root)){
+     (globalThis.jQuery||globalThis.$)?.(root).off('.dw2rlRegexTransfer');
+     transfers.delete(root);sortStarts.delete(root);
+   }
    if(outlineFrames.has(root))cancelAnimationFrame(outlineFrames.get(root));
    outlineFrames.delete(root);snapshots.delete(root);mounted.delete(root);
   }
@@ -310,11 +407,29 @@ export function createRegexFolders({enabled,getState,save,context}){
   outlineFrames.clear();
   dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;
   for(const root of mounted){
+   if(transfers.has(root)){
+     (globalThis.jQuery||globalThis.$)?.(root).off('.dw2rlRegexTransfer');
+     transfers.delete(root);sortStarts.delete(root);
+   }
    clear(root);snapshots.delete(root);
    root.previousElementSibling?.classList?.contains('dw2rl-regex-toolbar')&&root.previousElementSibling.remove();
    for(const row of nativeRows(root))row.querySelector(':scope > .dw2rl-regex-picker')?.remove();
   }
   mounted.clear();
  }
- return {sync,prepare:schedule,disable};
+ function getGroupSnapshot(scope){
+   if(!enabled())return null;
+   const key=scopeKey(scope);
+   if(!key)return null;
+   let current=getState().regexFolders?.[key];
+   if(!current && scope==='scoped'){
+     const ctx=context?.()||{},id=ctx.characterId ?? ctx.this_chid;
+     const scripts=ctx.characters?.[id]?.data?.extensions?.regex_scripts;
+     if(Array.isArray(scripts)&&scripts.length)current=record(key);
+   }
+   return {key,groups:Array.isArray(current?.groups)
+     ? current.groups.map(g=>({id:g.id,name:g.name})):[],
+     entries:{...(current?.entries||{})}};
+ }
+ return {sync,prepare:schedule,disable,getGroupSnapshot};
 }

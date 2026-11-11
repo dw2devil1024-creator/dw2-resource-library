@@ -1,5 +1,15 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.43-beta.1 · 正则拖拽归属与角色分组跨聊天记忆
+
+- TT 原生正则拖拽结束时按实际落点区域重新确认文件夹归属：拖进某组内部则加入该组，拖到不同区域的分界／未分组区域则移出分组。不会新建另一套同名分组。
+- 同一组的非连续区段不再生成第二个完整的「新文件夹」头，而用「↳ 分组名 · 续」提示它仍属原组；只有最前面的真正组头保留改名／删除功能。
+- 角色正则文件夹不再以可变化的 TT 角色列表编号存储，而以角色卡 avatar 的稳定标识生成分组键；同一卡的新聊天档案仍能读取原分组。
+- 对已有数字角色编号保存的旧分组采用脚本 ID 交集的无歧义迁移，只复制匹配记录，不删除旧备份，不把其他角色的分组强行挪过来。
+- 新增只读的 `getRegexFolderSnapshot(scope)` 供控制台读取当前真实分组，避免跨版本角色编号冲突。
+- 正则脚本本身及开关、执行顺序不由本次分组迁移修改；保留原有边框、透明度与整体交互样式。
+- 需 TT iOS 实测原生拖拽结束后重载、换档、折叠及跨插件同步。建议保留升级前 TT 设置备份。
+
 ## v0.1.42-beta.1 · 分组交互优化（仅逻辑，外观不变）
 
 - 预设分组：原生列表变化使用微任务合并更新，取消固定 35 毫秒等待；拖拽时避免插件与 TT 同时重绘。
@@ -29,7 +39,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.42-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.43-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

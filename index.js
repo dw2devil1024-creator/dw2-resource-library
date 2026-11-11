@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.42-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.43-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -11,7 +11,7 @@ import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
 import {createPromptFolders} from './preset-prompt-folders.js';
 import {promptManager} from '../../../openai.js';
-import {createRegexFolders} from './regex-folders.js?v=0.1.42-beta.1';
+import {createRegexFolders} from './regex-folders.js?v=0.1.43-beta.1';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -862,7 +862,10 @@ function start(){
         groups:Array.isArray(record?.groups)?record.groups.map(g=>({id:g.id,name:g.name})):[],
         entries:{...(record?.entries||{})}
       };
-    }
+    },
+    // Live regex-folder bridge for Preset Console. The scoped key is based on
+    // the character card's stable avatar, never on a chat/list index.
+    getRegexFolderSnapshot:scope=>regexFolders?.getGroupSnapshot?.(scope)||null
   };
   window.dispatchEvent(new Event('dw2rl-prompt-folders-ready'));
 }

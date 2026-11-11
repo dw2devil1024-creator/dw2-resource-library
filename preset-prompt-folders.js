@@ -34,6 +34,12 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   // Keep the old height until DW2 has restored folder headers, and anchor
   // the tapped row/header rather than trusting that temporary scroll value.
   const androidScrollGuard=typeof navigator!=='undefined'&&/Android/i.test(navigator.userAgent||'');
+  // Unlike scroll correction, direct native prompt toggles work equally well
+  // on iPhone/iPad and Android, while leaving desktop TT's native path alone.
+  const mobileToggleEnabled=typeof navigator!=='undefined'&&(
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'')||
+    (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)
+  );
   let viewportGuard=null,viewportTimer=0,viewportFrame=0,viewportExtraTimer=0,guardedList=null;
   function scrollContainer(){
     return doc().getElementById('completion_prompt_manager')?.closest('.scrollableInner')
@@ -171,7 +177,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   // This is only enabled when the exact native PromptManager API is ready;
   // otherwise the original click handler and scroll guard remain available.
   function togglePromptInPlace(event,toggle){
-    if(!androidScrollGuard||!enabled()||!toggle?.isConnected)return false;
+    if(!mobileToggleEnabled||!enabled()||!toggle?.isConnected)return false;
     const pm=promptManagerApi;
     if(!pm||typeof pm.getPromptOrderEntry!=='function'||
        typeof pm.saveServiceSettings!=='function')return false;
@@ -228,11 +234,12 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const target=event.target?.closest?.('.prompt-manager-toggle-action');
     if(!target||!guardedList?.contains(target))return;
     if(togglePromptInPlace(event,target))return;
-    // Compatibility fallback for TT builds with a different native manager.
-    captureViewport(target,{keepHeight:true});
+    // Compatibility fallback: Android retains its existing scroll guard;
+    // iOS lets TT's stock handler run normally if native APIs differ.
+    if(androidScrollGuard)captureViewport(target,{keepHeight:true});
   }
-  function bindAndroidToggleGuard(list){
-    if(!androidScrollGuard||guardedList===list)return;
+  function bindNativeToggleGuard(list){
+    if(!mobileToggleEnabled||guardedList===list)return;
     if(guardedList)guardedList.removeEventListener('click',captureNativeToggle,true);
     guardedList=list;
     list.addEventListener('click',captureNativeToggle,true);
@@ -618,7 +625,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     host=list;
     bindSort(list);
     observeNativeRows(list);
-    bindAndroidToggleGuard(list);
+    bindNativeToggleGuard(list);
     const toolbarSignature=JSON.stringify([currentPreset,selecting,first,rows.length]);
     const toolbarChanged=lastToolbarSignature!==toolbarSignature;
     if(toolbarChanged){

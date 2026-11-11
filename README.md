@@ -1,5 +1,14 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.48-beta.1 · 安卓预设单条开关原地更新（绕开原生整表重绘）
+
+- 根因对照：TT 原生 PromptManager 的开关监听器在切换启用状态后调用 renderDebounced()，随后清空并重建整张提示词列表；旧 DW2 的滚动校正无法保证阻止安卓 WebView 的持续上跳。柏宝箱预设优化则从点击委托层更新原始开关数据和已渲染行，规避这一整表重绘路径；本版独立实现同一思路，不复制第三方源码。
+- 只在安卓并且 TT 原生 PromptManager API 完整可用时，DW2 于预设列表捕获单条开关点击，直接修改 TT 的原生 promptOrderEntry.enabled、条目 CSS 和图标、清空该条目 token 缓存，并调用原生 saveServiceSettings()；不调用 renderDebounced()。
+- 不再靠连续回滚页面滚动抵消每次开关的整表重绘；旧的安卓滚动保护只作为原生接口不兼容时的兜底。折叠时已经实测有效的锚点修复保持不变。
+- 不拦截其他原生按钮，不拦截缺少原生提示词实体或切换权限的条目，确保不会无条件拦截第三方控件。
+- iOS 逻辑、全部分组 CSS 与 regex-folders.js 均保持不变；旧文件夹存储结构、提示词内容及原生顺序没有改动。
+- 需要安卓 TT 实机验证：点击不同预设条目的启用/关闭后列表应保持原位置；刷新后验证开关保存、分组折叠与令牌数量刷新；如果原生接口不匹配则自动退回原生交互。
+
 ## v0.1.47-beta.1 · 安卓预设单条开关的二次滚动校正
 
 - 继承 v0.1.46 对安卓折叠跳动的处理；修复在 TT 原生列表重新生成、又恢复旧滚动位置之后仍可能发生的短距离上跳。
@@ -76,7 +85,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.47-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.48-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

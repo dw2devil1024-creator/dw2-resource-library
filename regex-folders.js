@@ -250,6 +250,7 @@ export function createRegexFolders({enabled,getState,save,context}){
   const previous=snapshots.get(root);
   if(previous&&previous.key!==key)clear(root);
   const valid=new Map(r.groups.map(g=>[g.id,g.name]));
+  const validGroups=valid; // Stable existing iOS folder picker compatibility.
   const signature=JSON.stringify([key,r.groups.map(g=>[g.id,g.name]),
    rows.map(row=>[row.id,valid.has(r.entries[row.id])?r.entries[row.id]:''])]);
   const same=previous?.key===key&&previous?.signature===signature&&

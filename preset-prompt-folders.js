@@ -21,7 +21,7 @@ export function normalizeLegacyGroups(raw,validIds){
   }
   return groups.length?{groups,entries}:null;
 }
-export function createPromptFolders({enabled,getState,save,context,getActivePromptIds}){
+export function createPromptFolders({enabled,getState,save,context,getActivePromptIds,promptManagerApi}){
   let host=null,toolbar=null,timer=0,currentPreset='',active='all',lastSignature='';
   let microtaskPending=false,sorting=false;
   const folderCollapsed=new Map();
@@ -164,9 +164,72 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     // If TT suppresses a render, don't leave a minimum height behind.
     viewportTimer=setTimeout(()=>{correctViewport();releaseViewportGuard();},1800);
   }
+  // A native TT toggle schedules renderDebounced(), which destroys and
+  // recreates the entire prompt list. On Android this causes an upward jump
+  // even if scroll position is corrected after the fact. Update the existing
+  // TT prompt-order entry and its already-mounted row IN PLACE instead.
+  // This is only enabled when the exact native PromptManager API is ready;
+  // otherwise the original click handler and scroll guard remain available.
+  function togglePromptInPlace(event,toggle){
+    if(!androidScrollGuard||!enabled()||!toggle?.isConnected)return false;
+    const pm=promptManagerApi;
+    if(!pm||typeof pm.getPromptOrderEntry!=='function'||
+       typeof pm.saveServiceSettings!=='function')return false;
+    const row=toggle.closest('li.completion_prompt_manager_prompt');
+    const id=safe(row?.dataset?.pmIdentifier);
+    const character=pm.activeCharacter;
+    if(!id||!row||!character)return false;
+    let entry;
+    try{
+      const prompt=pm.getPromptById?.(id);
+      if(!prompt||pm.isPromptToggleAllowed?.(prompt)===false)return false;
+      entry=pm.getPromptOrderEntry(character,id);
+    }catch(error){
+      console.warn('[DW2 Resource Library] Cannot read native prompt toggle state',error);
+      return false;
+    }
+    if(!entry||typeof entry.enabled!=='boolean')return false;
+    // Prevent TT's click listener on the icon from scheduling a full
+    // render. The native save method is still used to persist this change.
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const next=!entry.enabled;
+    entry.enabled=next;
+    try{
+      const counts=pm.tokenHandler?.getCounts?.();
+      if(counts)counts[id]=null;
+    }catch(error){
+      console.debug('[DW2 Resource Library] Token cache update skipped',error);
+    }
+    for(const current of records()){
+      if(safe(current.dataset.pmIdentifier)!==id)continue;
+      current.classList.toggle('completion_prompt_manager_prompt_disabled',!next);
+      const icon=current.querySelector('.prompt-manager-toggle-action');
+      icon?.classList.toggle('fa-toggle-on',next);
+      icon?.classList.toggle('fa-toggle-off',!next);
+      const cell=current.querySelector('.prompt_manager_prompt_tokens');
+      if(cell){
+        cell.dataset.pmTokens='-';
+        cell.textContent='-';
+      }
+    }
+    const rec=currentRecord();
+    if(rec)updateGroupCounts(records(),pending||rec);
+    try{
+      Promise.resolve(pm.saveServiceSettings()).catch(error=>
+        console.warn('[DW2 Resource Library] Native prompt setting save failed',error));
+    }catch(error){
+      console.warn('[DW2 Resource Library] Native prompt setting save failed',error);
+    }
+    return true;
+  }
   function captureNativeToggle(event){
     const target=event.target?.closest?.('.prompt-manager-toggle-action');
-    if(target&&guardedList?.contains(target))captureViewport(target,{keepHeight:true});
+    if(!target||!guardedList?.contains(target))return;
+    if(togglePromptInPlace(event,target))return;
+    // Compatibility fallback for TT builds with a different native manager.
+    captureViewport(target,{keepHeight:true});
   }
   function bindAndroidToggleGuard(list){
     if(!androidScrollGuard||guardedList===list)return;

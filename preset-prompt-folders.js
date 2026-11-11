@@ -133,6 +133,9 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const rec=state.promptFolders[name];
     if(!rec.collapsed||typeof rec.collapsed!=='object'||Array.isArray(rec.collapsed))rec.collapsed={};
     if(currentPreset!==name){
+      // A fast preset switch must not leave the previous preset's Android
+      // temporary list height or scroll anchor active.
+      releaseViewportGuard();
       currentPreset=name;active='all';folderCollapsed.clear();selecting=false;first='';pending=null;
       lastSignature='';lastRenderedRows=[];lastRenderedList=null;lastToolbarSignature='';
       for(const group of rec.groups||[]){

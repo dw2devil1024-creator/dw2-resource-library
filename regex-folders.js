@@ -2,7 +2,7 @@
 const CONTAINERS=[['global','#saved_regex_scripts'],['preset','#saved_preset_scripts'],['scoped','#saved_scoped_scripts']];
 const trim=x=>String(x??'').trim();
 export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();let listening=false;let refreshToken=0;
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();let listening=false;let refreshToken=0;
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -66,58 +66,88 @@ export function createRegexFolders({enabled,getState,save,context}){
      old.runs.every(run=>run.header.parentElement===root &&
        run.outline.parentElement===root && run.header.nextElementSibling===run.first)){
     refreshCounts(root,rows,r);
-    updateOutlines(root);
-    return;
+    return; // Do not force a geometry flush on each unchanged TT sync.
   }
-  clear(root);
+  // Preserve existing headers/outlines whenever the native run is the same.
+  // A preset switch must discard decorators from the old scope.
+  if(old && old.key!==key)clear(root);
+  const previous=old?.key===key?old.runs:[];
+  const usedHeaders=new Set(),usedOutlines=new Set();
+  for(const row of rows)row.classList.remove('dw2rl-regex-collapsed','dw2rl-regex-group-row','dw2rl-regex-group-end');
   let toolbar=root.previousElementSibling;
   if(!toolbar?.classList?.contains('dw2rl-regex-toolbar')){toolbar=node('div','dw2rl-regex-toolbar');root.before(toolbar);}
+  if(toolbar.dataset.dw2rlScopeKey!==key){
   toolbar.replaceChildren();
+  toolbar.dataset.dw2rlScopeKey=key;
   const newGroup=btn('＋ 新建文件夹',()=>showDialog('新建正则文件夹','',name=>{
     if(r.groups.some(g=>g.name===name))return false;
     r.groups.push({id:'rg'+Date.now().toString(36)+Math.random().toString(36).slice(2),name});save();
   }),'menu_button');
   toolbar.append(newGroup,node('small','','仅整理界面 · 不改变正则执行与启用状态'));
+  }
   let last='';
   const runs=[];
   rows.forEach((row,index)=>{
     const gid=validGroups.has(r.entries[row.id])?r.entries[row.id]:'';
     if(gid!==last&&gid){
-      const header=node('div','dw2rl-regex-header');
-      runs.push({header,first:row,last:row,key:key+':'+gid});
+      const saved=previous.find(run=>run.first===row && run.gid===gid &&
+        run.header.parentElement===root && run.outline?.parentElement===root);
+      const header=saved?.header||node('div','dw2rl-regex-header');
       const collapseKey=key+':'+gid;
-      const toggle=btn((isCollapsed(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid),()=>{
-        const next=!isCollapsed(collapseKey);
-        collapsed.set(collapseKey,next);
-        // Fast path: change ONLY this folder's rows, no full TT list rebuild.
-        // All rows in noncontiguous runs of this group share the same state.
-        const sameGroup=rows.filter(x=>r.entries[x.id]===gid);
-        sameGroup.forEach(x=>x.classList.toggle('dw2rl-regex-collapsed',next));
-        root.querySelectorAll(':scope > .dw2rl-regex-header').forEach(h=>{
-          if(h.dataset.folderKey!==collapseKey)return;
-          h.dataset.collapsed=String(next);
-          const t=h.querySelector('.dw2rl-regex-folder-name');
-          if(t)t.textContent=(next?'▸ ':'▾ ')+validGroups.get(gid);
-        });
-        updateOutlines(root);
-      },'dw2rl-regex-folder-name');
-      const members=rows.filter(x=>r.entries[x.id]===gid);
-      const count=members.length;
-      const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
+      if(!saved){
+        const toggle=btn('',()=>{
+          const state=record(key);
+          const next=!isCollapsed(collapseKey);
+          collapsed.set(collapseKey,next);
+          // TT may have replaced/reordered rows since this header was made.
+          for(const item of nativeRows(root)){
+            if(state.entries[item.id]===gid)item.classList.toggle('dw2rl-regex-collapsed',next);
+          }
+          root.querySelectorAll(':scope > .dw2rl-regex-header').forEach(h=>{
+            if(h.dataset.folderKey!==collapseKey)return;
+            h.dataset.collapsed=String(next);
+            const t=h.querySelector('.dw2rl-regex-folder-name');
+            if(t)t.textContent=(next?'▸ ':'▾ ')+(state.groups.find(g=>g.id===gid)?.name||'');
+          });
+          updateOutlines(root);
+        },'dw2rl-regex-folder-name');
+        header.append(toggle,node('small','dw2rl-regex-count',''));
+        header.append(btn('✎',()=>{
+          const state=record(key);
+          const current=state.groups.find(g=>g.id===gid)?.name;
+          if(current===undefined)return;
+          showDialog('重命名文件夹',current,name=>{
+            const latest=record(key);
+            if(latest.groups.some(g=>g.id!==gid&&g.name===name))return false;
+            const group=latest.groups.find(g=>g.id===gid);
+            if(!group)return false;
+            group.name=name;save();
+          });
+        }));
+        header.append(btn('×',()=>{
+          const current=record(key).groups.find(g=>g.id===gid)?.name;
+          if(current===undefined)return;
+          showDialog('删除「'+current+'」文件夹？正则不会被删除。','',()=>{
+            const latest=record(key);
+            latest.groups=latest.groups.filter(g=>g.id!==gid);
+            for(const [id,value] of Object.entries(latest.entries))
+              if(value===gid)delete latest.entries[id];
+            save();return true;
+          },{confirmOnly:true,confirmText:'删除文件夹'});
+        }));
+      }
       header.dataset.collapsed=String(isCollapsed(collapseKey));
       header.dataset.folderKey=collapseKey;
       header.dataset.groupId=gid;
-      header.append(toggle,node('small','dw2rl-regex-count','('+active+'/'+count+')'));
-      header.append(btn('✎',()=>showDialog('重命名文件夹',validGroups.get(gid),name=>{
-        if(r.groups.some(g=>g.id!==gid&&g.name===name))return false;
-        r.groups.find(g=>g.id===gid).name=name;save();
-      })));
-      header.append(btn('×',()=>showDialog('删除「'+validGroups.get(gid)+'」文件夹？正则不会被删除。','',()=>{
-        r.groups=r.groups.filter(g=>g.id!==gid);
-        for(const [id,value] of Object.entries(r.entries))if(value===gid)delete r.entries[id];
-        save();return true;
-      },{confirmOnly:true,confirmText:'删除文件夹'})));
-      root.insertBefore(header,row);
+      const title=header.querySelector('.dw2rl-regex-folder-name');
+      if(title)title.textContent=(isCollapsed(collapseKey)?'▸ ':'▾ ')+validGroups.get(gid);
+      const members=rows.filter(x=>r.entries[x.id]===gid);
+      const active=members.filter(x=>x.querySelector('input.disable_regex')?.checked===false).length;
+      const counter=header.querySelector('.dw2rl-regex-count');
+      if(counter)counter.textContent='('+active+'/'+members.length+')';
+      if(header.nextElementSibling!==row)root.insertBefore(header,row);
+      runs.push({header,first:row,last:row,key:collapseKey,gid,saved});
+      usedHeaders.add(header);
     }
     // Move-to-folder menu belongs to the row and uses a native <select>,
     // keeping TT's original script row, edit, enable and drag handlers.
@@ -177,7 +207,8 @@ export function createRegexFolders({enabled,getState,save,context}){
       row.append(picker);
     }
     picker.dataset.scopeKey=key;
-    picker.textContent=(validGroups.get(gid)||'未分组')+'  ▾';
+    const nextCaption=(validGroups.get(gid)||'未分组')+'  ▾';
+    if(picker.textContent!==nextCaption)picker.textContent=nextCaption;
     if(gid){row.classList.add('dw2rl-regex-group-row');const next=rows[index+1];if(!next||r.entries[next.id]!==gid)row.classList.add('dw2rl-regex-group-end');
       const run=runs[runs.length-1];if(run)run.last=row;
     }
@@ -185,12 +216,21 @@ export function createRegexFolders({enabled,getState,save,context}){
     last=gid;
   });
   for(const run of runs){
-   const outline=node('div','dw2rl-regex-outline');
+   const outline=run.saved?.outline||node('div','dw2rl-regex-outline');
    outline.dataset.folderKey=run.key;
-   root.append(outline);
+   if(outline.parentElement!==root)root.append(outline);
    outline._dw2rlHeader=run.header;
    outline._dw2rlLast=run.last;
    run.outline=outline;
+   usedOutlines.add(outline);
+  }
+  // Only remove obsolete folder decorations. Preserve all native rows and
+  // the existing iOS picker buttons, so group changes don't blank the list.
+  for(const h of root.querySelectorAll(':scope > .dw2rl-regex-header')){
+    if(!usedHeaders.has(h))h.remove();
+  }
+  for(const outline of root.querySelectorAll(':scope > .dw2rl-regex-outline')){
+    if(!usedOutlines.has(outline))outline.remove();
   }
   snapshots.set(root,{signature,rows:[...rows],runs,key});
   ensureObserver(root);
@@ -198,7 +238,13 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function ensureObserver(root){
   if(observers.has(root))return;
-  const resize=new ResizeObserver(()=>{if(root.isConnected)updateOutlines(root);});
+  const resize=new ResizeObserver(()=>{
+    if(!root.isConnected||outlineFrames.has(root))return;
+    outlineFrames.set(root,requestAnimationFrame(()=>{
+      outlineFrames.delete(root);
+      if(root.isConnected)updateOutlines(root);
+    }));
+  });
   resize.observe(root);observers.set(root,resize);
  }
  function updateOutlines(root){
@@ -247,7 +293,8 @@ export function createRegexFolders({enabled,getState,save,context}){
   for(const root of mounted){
    if(live.has(root))continue;
    observers.get(root)?.disconnect();observers.delete(root);
-   snapshots.delete(root);mounted.delete(root);
+   if(outlineFrames.has(root))cancelAnimationFrame(outlineFrames.get(root));
+   outlineFrames.delete(root);snapshots.delete(root);mounted.delete(root);
   }
  }
  function schedule(){
@@ -259,6 +306,8 @@ export function createRegexFolders({enabled,getState,save,context}){
   if(listening){document.removeEventListener('change',onRegexChange);listening=false;}
   for(const resize of observers.values())resize.disconnect();
   observers.clear();
+  for(const frame of outlineFrames.values())cancelAnimationFrame(frame);
+  outlineFrames.clear();
   dialog?.remove();dialog=null;folderMenu?.remove();folderMenu=null;
   for(const root of mounted){
    clear(root);snapshots.delete(root);
@@ -267,5 +316,5 @@ export function createRegexFolders({enabled,getState,save,context}){
   }
   mounted.clear();
  }
- return {sync,disable};
+ return {sync,prepare:schedule,disable};
 }

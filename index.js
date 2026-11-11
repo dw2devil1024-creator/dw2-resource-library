@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.41-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.42-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -11,7 +11,7 @@ import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
 import {createPromptFolders} from './preset-prompt-folders.js';
 import {promptManager} from '../../../openai.js';
-import {createRegexFolders} from './regex-folders.js?v=0.1.41-beta.1';
+import {createRegexFolders} from './regex-folders.js?v=0.1.42-beta.1';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -797,7 +797,7 @@ function onDOMChange(records){
     if(shouldMount&&shouldScan)break;
   }
   if(shouldScan)scheduleScan();
-  if(alive&&state.regexFoldersEnabled&&records.some(r=>[...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1&&(n.matches?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')||n.querySelector?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')))))regexFolders?.sync();
+  if(alive&&state.regexFoldersEnabled&&records.some(r=>[...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1&&(n.matches?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')||n.querySelector?.('.regex-script-label,#saved_regex_scripts,#saved_preset_scripts,#saved_scoped_scripts')))))regexFolders?.prepare?.();
   if(alive&&state.promptFoldersEnabled&&records.some(record=>[...record.addedNodes].some(node=>
     node.nodeType===1 && (node.matches?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt') ||
       node.querySelector?.('#completion_prompt_manager_list,.completion_prompt_manager_prompt')))))promptFolders?.prepare();

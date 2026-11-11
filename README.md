@@ -1,5 +1,15 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.44-beta.1 · 正则分组的统一文件夹视图
+
+- 原先 DW2 正则分组根据 TT 原生顺序分段插入同名标题，同一分组中的条目被其他条目隔开时会形成多个「续」区块；这不是完整的逻辑分组。
+- 本版将每个实际文件夹渲染为一个视觉区段，并显式显示「未分组」投放区。条目根据分组归属集中排列；不再生成同名分段标题。
+- 选择框变更分组后，条目会在界面中进入目标文件夹，即使两者在 TT 原来的正则执行顺序中相距很远。
+- 按正则行的拖拽手柄在 iPhone 上拖到目标文件夹／文件夹内的条目，可只修改分组归属。分组启用时暂停 TT 的原生 sortable，避免视觉排序与实际执行优先级互相干扰；停用分组后恢复原生 sortable。用户如需真正改变正则执行顺序，须先停用 DW2 正则分组。
+- 不迁移、不重写正则脚本内容或启用状态，也不修改原生执行顺序；DOM 中正则行的原始顺序和事件处理器保持原样。
+- 复用现有分组标题、外框、弹窗及按钮设计。仅增加拖拽手柄的触控兼容样式，不更改用户喜欢的边框、颜色或透明底。
+- 预设分组、角色分组的稳定键记忆、DW2 Preset Console 的只读快照接口保持不变。请备份设置并在 TT iOS 实测拖拽、跨组选择、折叠、开关、刷新及停用后的恢复。
+
 ## v0.1.43-beta.1 · 正则拖拽归属与角色分组跨聊天记忆
 
 - TT 原生正则拖拽结束时按实际落点区域重新确认文件夹归属：拖进某组内部则加入该组，拖到不同区域的分界／未分组区域则移出分组。不会新建另一套同名分组。
@@ -39,7 +49,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.43-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.44-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

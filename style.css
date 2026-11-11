@@ -971,3 +971,17 @@ select.dw2rl-native-hidden {
   color:var(--SmartThemeBodyColor,inherit);font-size:10px;opacity:.65;
   text-align:center;user-select:none;-webkit-user-select:none;
 }
+
+/* v0.1.50: original TT detach icon becomes a theme-native prompt trash action. */
+#completion_prompt_manager_list .dw2rl-prompt-trash-action {
+  cursor:pointer;touch-action:manipulation;
+}
+#completion_prompt_manager .dw2rl-prompt-delete-name {
+  font-size:13px;font-weight:600;overflow-wrap:anywhere;
+}
+#completion_prompt_manager .dw2rl-prompt-delete-description {
+  font-size:11px;line-height:1.75;opacity:.8;
+}
+#completion_prompt_manager .dw2rl-prompt-delete-actions {
+  flex-wrap:wrap!important;
+}

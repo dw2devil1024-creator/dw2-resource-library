@@ -953,3 +953,12 @@ select.dw2rl-native-hidden {
   visibility:hidden;
   transition:none!important;
 }
+
+/* v0.1.44 · iOS pointer gestures only on regex drag handles.
+   Folder appearance stays identical; no native row DOM reordering. */
+#regex_container .regex-script-container.dw2rl-regex-logical
+  > .regex-script-label .drag-handle {
+  touch-action: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}

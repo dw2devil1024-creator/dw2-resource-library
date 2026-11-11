@@ -2,7 +2,7 @@
  * Copyright (c) 2026 S.A. · DW2
  * Never reads or writes the content of a preset, world book or theme.
  */
-export const VERSION = '0.1.44-beta.1';
+export const VERSION = '0.1.45-beta.1';
 export const STORE_KEY = 'dw2ResourceLibrary';
 export const CATEGORIES = Object.freeze([
   { id: 'preset', label: '预设' },
@@ -89,7 +89,7 @@ export function normalizeState(input) {
       }
       const entries={};const valid=new Set(groups.map(g=>g.id));
       for(const [id,gid] of Object.entries(raw.entries||{}).slice(0,2500)){
-        if(id.length<=200 && typeof gid==='string' && valid.has(gid))entries[id]=gid;
+        if(id.length<=200 && typeof gid==='string' && (valid.has(gid)||gid==='__dw2_loose__'))entries[id]=gid;
       }
       state.regexFolders[scope]={groups,entries};
     }

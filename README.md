@@ -1,5 +1,14 @@
 # DW2 · Resource Library（资源分类）
 
+## v0.1.45-beta.1 · 默认分组与独立散放（全局／预设／角色正则）
+
+- 三类正则在启用 DW2 分组功能时均显示内置「默认分组」，不需要先手动创建文件夹；从未明确分配的正则自动在其中显示。内置分组不可删除或重命名，避免破坏初始状态。
+- 自定义分组名称、条目归属和原有保存键保持不变；原来在「未分组」的条目显示为「默认分组」，不强行写入额外分组记录。
+- 新增独立的「散放」状态。选择器可选「独立散放（不进分组）」；在文件夹区域外的轻量提示条放开拖拽，也能将正则放到文件夹外，且不被其他文件夹的折叠状态影响。
+- 存储层显式保留散放状态标记，确保设置保存、切换档案和重启后不会再次自动归回默认分组；原生正则正文、开关、执行优先级不变。
+- 不为散放正则创建折叠外框；默认分组与自定义文件夹保持原有透明细边框。DW2 Resource Library 原生分组视觉结构和 Preset Console 的读取接口保持兼容。
+- 本功能适用于全局、预设与角色正则三大块；请备份 TT 设置，升级后在 iPhone 上验证默认显示、散放、拖拽、重启持久化与控制台读取。
+
 ## v0.1.44-beta.1 · 正则分组的统一文件夹视图
 
 - 原先 DW2 正则分组根据 TT 原生顺序分段插入同名标题，同一分组中的条目被其他条目隔开时会形成多个「续」区块；这不是完整的逻辑分组。
@@ -49,7 +58,7 @@
 > *No public software license is granted. Unauthorized use, modification, derivative development, redistribution, and republication of rights-controlled original content are prohibited, subject to GitHub's Terms of Service, applicable law, and existing third-party licenses.*
 
 **联合署名：S.A. · DW2**  
-**版本：v0.1.44-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
+**版本：v0.1.45-beta.1｜适用于 TauriTavern / SillyTavern 1.16.0+ 的实验性扩展**
 
 这是一个**独立、可关闭、非破坏性**的资源分组测试版。不会修改、删除或重命名任何原始预设、世界书或美化主题文件。
 

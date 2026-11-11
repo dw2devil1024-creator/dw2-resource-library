@@ -45,7 +45,13 @@ export function createRegexFolders({enabled,getState,save,context}){
    if(!state.regexFolders[scope] && scope.startsWith('scoped:char_')){
      const root=document.querySelector('#saved_scoped_scripts');
      const rows=root?nativeRows(root):[];
-     const legacy=findLegacyScopedRegexFolder(state.regexFolders,rows.map(row=>row.id));
+     const ctx=context?.()||{},id=ctx.characterId ?? ctx.this_chid;
+     const cardScripts=ctx.characters?.[id]?.data?.extensions?.regex_scripts||[];
+     const visibleIds=rows.map(row=>row.id);
+     for(const script of Array.isArray(cardScripts)?cardScripts:[]){
+       if(script?.id)visibleIds.push(String(script.id));
+     }
+     const legacy=findLegacyScopedRegexFolder(state.regexFolders,visibleIds);
      if(legacy){
        state.regexFolders[scope]={
          groups:legacy.record.groups.map(group=>({...group})),
@@ -415,7 +421,12 @@ export function createRegexFolders({enabled,getState,save,context}){
    if(!enabled())return null;
    const key=scopeKey(scope);
    if(!key)return null;
-   const current=getState().regexFolders?.[key];
+   let current=getState().regexFolders?.[key];
+   if(!current && scope==='scoped'){
+     const ctx=context?.()||{},id=ctx.characterId ?? ctx.this_chid;
+     const scripts=ctx.characters?.[id]?.data?.extensions?.regex_scripts;
+     if(Array.isArray(scripts)&&scripts.length)current=record(key);
+   }
    return {key,groups:Array.isArray(current?.groups)
      ? current.groups.map(g=>({id:g.id,name:g.name})):[],
      entries:{...(current?.entries||{})}};

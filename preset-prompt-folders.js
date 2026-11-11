@@ -34,7 +34,7 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
   // Keep the old height until DW2 has restored folder headers, and anchor
   // the tapped row/header rather than trusting that temporary scroll value.
   const androidScrollGuard=typeof navigator!=='undefined'&&/Android/i.test(navigator.userAgent||'');
-  let viewportGuard=null,viewportTimer=0,viewportFrame=0,guardedList=null;
+  let viewportGuard=null,viewportTimer=0,viewportFrame=0,viewportExtraTimer=0,guardedList=null;
   function scrollContainer(){
     return doc().getElementById('completion_prompt_manager')?.closest('.scrollableInner')
       ||doc().getElementById('completion_prompt_manager_list')?.closest('.scrollableInner')
@@ -62,22 +62,66 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
     const info=viewportGuard;
     if(viewportTimer)clearTimeout(viewportTimer);
     if(viewportFrame)cancelAnimationFrame(viewportFrame);
-    viewportTimer=0;viewportFrame=0;viewportGuard=null;
-    if(!info?.list?.style)return;
-    if(info.heightHeld){
+    if(viewportExtraTimer)clearTimeout(viewportExtraTimer);
+    viewportTimer=0;viewportFrame=0;viewportExtraTimer=0;viewportGuard=null;
+    if(!info)return;
+    if(info.cancelOnInteraction){
+      for(const kind of ['pointerdown','touchstart','wheel']){
+        info.scroller?.removeEventListener?.(kind,info.cancelOnInteraction,true);
+      }
+    }
+    // Restore EXACT inline scroll policies, including author-set priorities.
+    if(info.scrollStyleHeld&&info.scroller?.style){
+      const style=info.scroller.style;
+      if(info.oldScrollBehavior)style.setProperty('scroll-behavior',info.oldScrollBehavior,info.oldScrollPriority);
+      else style.removeProperty('scroll-behavior');
+      if(info.oldOverflowAnchor)style.setProperty('overflow-anchor',info.oldOverflowAnchor,info.oldOverflowPriority);
+      else style.removeProperty('overflow-anchor');
+    }
+    if(info.heightHeld&&info.list?.style){
       if(info.oldMinHeight)info.list.style.setProperty('min-height',info.oldMinHeight,info.oldMinPriority);
       else info.list.style.removeProperty('min-height');
     }
   }
   function settleViewportGuard(){
     if(!viewportGuard)return;
+    const info=viewportGuard;
     correctViewport();
     if(viewportFrame)cancelAnimationFrame(viewportFrame);
-    viewportFrame=requestAnimationFrame(()=>{
+    if(viewportExtraTimer)clearTimeout(viewportExtraTimer);
+    viewportFrame=0;viewportExtraTimer=0;
+    if(info.type==='header'){
+      // Folding already behaves correctly: preserve its existing one-frame fix.
+      viewportFrame=requestAnimationFrame(()=>{
+        viewportFrame=0;
+        if(viewportGuard!==info)return;
+        correctViewport();
+        releaseViewportGuard();
+      });
+      return;
+    }
+    // TT can call #setScrollPosition() AFTER the DOM mutation that triggered
+    // our first correction. Android WebView may also settle its scroll anchor
+    // for several frames. Do not release this toggle guard after one frame.
+    let remaining=12;
+    const stabilize=()=>{
       viewportFrame=0;
+      if(viewportGuard!==info)return;
+      if(!anchorForGuard(info))return; // A newer TT rerender may be pending.
       correctViewport();
-      releaseViewportGuard();
-    });
+      if(--remaining>0){
+        viewportFrame=requestAnimationFrame(stabilize);
+      }else{
+        // One final delayed pass catches TT's late scroll restoration.
+        viewportExtraTimer=setTimeout(()=>{
+          viewportExtraTimer=0;
+          if(viewportGuard!==info)return;
+          correctViewport();
+          releaseViewportGuard();
+        },90);
+      }
+    };
+    viewportFrame=requestAnimationFrame(stabilize);
   }
   function captureViewport(target,{keepHeight=false}={}){
     if(!androidScrollGuard)return;
@@ -97,9 +141,26 @@ export function createPromptFolders({enabled,getState,save,context,getActiveProm
       list,scroller,type:row?'prompt':'header',id,
       originalNode:node,relativeTop:node.getBoundingClientRect().top-
         scroller.getBoundingClientRect().top,
-      heightHeld:keepHeight&&height>0,oldMinHeight,oldMinPriority
+      heightHeld:keepHeight&&height>0,oldMinHeight,oldMinPriority,
+      scrollStyleHeld:keepHeight&&!!scroller.style,
+      oldScrollBehavior:scroller.style?.getPropertyValue('scroll-behavior')||'',
+      oldScrollPriority:scroller.style?.getPropertyPriority('scroll-behavior')||'',
+      oldOverflowAnchor:scroller.style?.getPropertyValue('overflow-anchor')||'',
+      oldOverflowPriority:scroller.style?.getPropertyPriority('overflow-anchor')||'',
+      cancelOnInteraction:null
     };
     if(viewportGuard.heightHeld)list.style.setProperty('min-height',height+'px','important');
+    if(viewportGuard.scrollStyleHeld){
+      // Avoid smooth scrolling and the browser's competing automatic anchor
+      // only while one native toggle is being rerendered.
+      scroller.style.setProperty('scroll-behavior','auto','important');
+      scroller.style.setProperty('overflow-anchor','none','important');
+      viewportGuard.cancelOnInteraction=()=>releaseViewportGuard();
+      for(const kind of ['pointerdown','touchstart','wheel']){
+        scroller.addEventListener?.(kind,viewportGuard.cancelOnInteraction,
+          {capture:true,passive:true});
+      }
+    }
     // If TT suppresses a render, don't leave a minimum height behind.
     viewportTimer=setTimeout(()=>{correctViewport();releaseViewportGuard();},1800);
   }

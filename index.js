@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.47-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v0.1.48-beta.1 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -9,9 +9,9 @@ import {
 } from './resource-core.js';
 import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
-import {createPromptFolders} from './preset-prompt-folders.js?v=0.1.47-beta.1';
+import {createPromptFolders} from './preset-prompt-folders.js?v=0.1.48-beta.1';
 import {promptManager} from '../../../openai.js';
-import {createRegexFolders} from './regex-folders.js?v=0.1.47-beta.1';
+import {createRegexFolders} from './regex-folders.js?v=0.1.48-beta.1';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -817,6 +817,7 @@ function start(){
       window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
     },
     context:nativeContext,
+    promptManagerApi:promptManager,
     getActivePromptIds:()=>{
       const current=promptManager?.activeCharacter;
       return current?promptManager.getPromptOrderForCharacter(current)

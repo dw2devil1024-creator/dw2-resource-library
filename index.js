@@ -1,5 +1,5 @@
 /**
- * DW2 · Resource Library v0.1.51-beta.1 | S.A. · DW2
+ * DW2 · Resource Library v1.0.0 | S.A. · DW2
  * Optional non-destructive selector enhancement for TT/ST.
  * Independent implementation. No third-party resource organizer source code reused.
  */
@@ -9,9 +9,9 @@ import {
 } from './resource-core.js';
 import { createGlobalWorldGrouping } from './global-world-groups.js';
 import {createPresetParameterFold} from './preset-parameter-fold.js';
-import {createPromptFolders} from './preset-prompt-folders.js?v=0.1.51-beta.1';
+import {createPromptFolders} from './preset-prompt-folders.js?v=1.0.0';
 import {promptManager} from '../../../openai.js';
-import {createRegexFolders} from './regex-folders.js?v=0.1.51-beta.1';
+import {createRegexFolders} from './regex-folders.js?v=1.0.0';
 
 const SELECTORS='select[data-preset-manager-for], select#themes, select#world_editor_select';
 const MENU_ID='dw2rl-menu-entry';
@@ -20,7 +20,7 @@ const POP_ID='dw2rl-popover';
 const MANAGER_ID='dw2rl-manager';
 const sourceMap=new Map();
 const adapters=new Map();
-let alive=false, startPromise=null, watcher=null, scanTimer=0, delayedTimer=0;
+let alive=false, startPromise=null, enableEpoch=0, watcher=null, scanTimer=0, delayedTimer=0;
 let globalWorldGrouping=null,parameterFold=null,promptFolders=null,regexFolders=null;
 let state=createEmptyState(), ctx=null, fallbackStore=false;
 let popover=null, manager=null, settingsRoot=null, managedSourceId='';
@@ -728,7 +728,7 @@ function mountSettings(){
     saveData();ensureGlobalWorldGroups();
     if(state.globalWorldGroupsEnabled&&!state.enabled)notify('请先启用原位分组选择，再开启全局世界书分类。','info');
   });
-  globalRow.append(globalCheck,el('span','','全局世界书原生下拉内分组（实验性）'));body.append(globalRow);
+  globalRow.append(globalCheck,el('span','','全局世界书原生下拉内分组'));body.append(globalRow);
   const foldRow=el('label','toggle-row');
   const foldCheck=el('input');foldCheck.type='checkbox';
   foldCheck.id='dw2rl-parameter-fold-enable';foldCheck.checked=state.parameterFoldEnabled;
@@ -746,7 +746,7 @@ function mountSettings(){
     if(state.promptFoldersEnabled)promptFolders?.sync();else promptFolders?.disable();
     window.dispatchEvent(new Event('dw2rl-prompt-folders-changed'));
   });
-  promptRow.append(promptCheck,el('span','','预设内部提示词分组（基础测试版）'));
+  promptRow.append(promptCheck,el('span','','预设内部提示词分组'));
   body.append(promptRow);
   const regexRow=el('label','toggle-row');
   const regexCheck=el('input');regexCheck.type='checkbox';
@@ -755,7 +755,7 @@ function mountSettings(){
     state.regexFoldersEnabled=regexCheck.checked;saveData();
     if(state.regexFoldersEnabled)regexFolders?.sync();else regexFolders?.disable();
   });
-  regexRow.append(regexCheck,el('span','','正则文件夹分组（实验性）'));
+  regexRow.append(regexCheck,el('span','','正则文件夹分组'));
   body.append(regexRow);
   const actions=el('div','settings-actions');
   const updateButton=button('检查并更新','soft-btn');updateButton.addEventListener('click',()=>void checkAndUpdate(updateButton));
@@ -872,15 +872,21 @@ function start(){
 }
 export function onEnable(){
   if(startPromise)return startPromise;
+  // A disable between scheduling and executing a microtask must cancel
+  // initialization, or the extension can mount itself after being disabled.
+  const ticket=++enableEpoch;
   startPromise=Promise.resolve().then(()=>{
+    if(ticket!==enableEpoch)return;
     if(document.readyState==='loading'){
-      document.addEventListener('DOMContentLoaded',start,{once:true});
-      listeners.push(()=>document.removeEventListener('DOMContentLoaded',start));
+      const startOnReady=()=>{if(ticket===enableEpoch)start();};
+      document.addEventListener('DOMContentLoaded',startOnReady,{once:true});
+      listeners.push(()=>document.removeEventListener('DOMContentLoaded',startOnReady));
     }else start();
   });
   return startPromise;
 }
 export function onDisable(){
+  ++enableEpoch;
   if(!alive && !startPromise)return;
   alive=false;
   if(scanTimer)clearTimeout(scanTimer);scanTimer=0;

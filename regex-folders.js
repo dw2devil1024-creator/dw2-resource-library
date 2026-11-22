@@ -1,4 +1,4 @@
-/* DW2 regex folders: presentation metadata only, no regex mutation. */
+/* DW2 regex folders: metadata-only grouping; same-group drag delegates execution ordering to TT. */
 // The TT character's avatar identifies the same card across chat saves.
 // A list index can change when cards are imported, removed, or re-ordered.
 export function stableScopedRegexFolderKey(ctx){
@@ -34,8 +34,9 @@ const folderFor=(state,scriptId,valid)=> {
  return stored===LOOSE_FOLDER?LOOSE_FOLDER
    :valid.has(stored)?stored:DEFAULT_FOLDER;
 };
-export function createRegexFolders({enabled,getState,save,context}){
- const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const dragBindings=new Map(),nativeSortMemory=new Map();let listening=false;let refreshToken=0;
+export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
+ const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const dragBindings=new Map(),nativeSortMemory=new Map(),nativeSaveQueues=new Map();let listening=false;let refreshToken=0;
+ const mobileNativeToggle=typeof navigator!=='undefined'&&(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1));
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
  function scopeKey(scope){
@@ -103,16 +104,19 @@ export function createRegexFolders({enabled,getState,save,context}){
   const locate=event=>{
    const element=document.elementFromPoint?.(event.clientX,event.clientY);
    if(!element||!root.contains(element))return null;
-   const item=element.closest?.('.dw2rl-regex-header,.regex-script-label');
-   if(!item||!root.contains(item))return LOOSE_FOLDER;
-   return item.classList.contains('dw2rl-regex-header')
-    ?item.dataset.groupId||LOOSE_FOLDER
-    :item.dataset.dw2rlFolderId||LOOSE_FOLDER;
+   const row=element.closest?.('.regex-script-label');
+   if(row?.parentElement===root){
+    const rect=row.getBoundingClientRect();
+    return {gid:row.dataset.dw2rlFolderId||LOOSE_FOLDER,row,before:event.clientY<rect.top+rect.height/2};
+   }
+   const header=element.closest?.('.dw2rl-regex-header');
+   if(header?.parentElement===root)return {gid:header.dataset.groupId||DEFAULT_FOLDER,row:null};
+   return {gid:LOOSE_FOLDER,row:null};
   };
   const clear=()=>{
    if(!gesture)return;
    gesture.row.style.removeProperty('opacity');
-   gesture.highlight?.style.removeProperty('box-shadow');
+   gesture.highlight?.classList.remove('dw2rl-regex-drop-target');
    gesture=null;
    document.removeEventListener('pointermove',move,true);
    document.removeEventListener('pointerup',up,true);
@@ -120,30 +124,52 @@ export function createRegexFolders({enabled,getState,save,context}){
   };
   const move=event=>{
    if(!gesture||event.pointerId!==gesture.pointerId)return;
-   if(!gesture.moving && Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<9)return;
+   if(!gesture.moving&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)<9)return;
    gesture.moving=true;
    if(event.cancelable)event.preventDefault();
    gesture.row.style.opacity='0.6';
-   gesture.highlight?.style.removeProperty('box-shadow');
-   const groupId=locate(event);
-   gesture.highlight=[...root.querySelectorAll(':scope > .dw2rl-regex-header')]
-     .find(el=>el.dataset.groupId===groupId)||null;
-   if(gesture.highlight)gesture.highlight.style.boxShadow='inset 0 0 0 1px currentColor';
+   gesture.highlight?.classList.remove('dw2rl-regex-drop-target');
+   const hit=locate(event);
+   gesture.highlight=hit?.row||[...root.querySelectorAll(':scope > .dw2rl-regex-header')]
+    .find(el=>el.dataset.groupId===hit?.gid)||null;
+   if(gesture.highlight&&gesture.highlight!==gesture.row)
+    gesture.highlight.classList.add('dw2rl-regex-drop-target');
+  };
+  const commitNativeSort=(row,target,before)=>{
+   const $=globalThis.jQuery||globalThis.$;
+   if(typeof $!=='function')return false;
+   let originalStop;
+   try{originalStop=$(root).sortable('option','stop');}catch{return false;}
+   if(typeof originalStop!=='function')return false;
+   if(before)root.insertBefore(row,target);
+   else root.insertBefore(row,target.nextSibling);
+   // Use TT's own sortable stop callback. It persists the actual regex order
+   // and rebuilds native rows so editor/toggle handlers capture fresh indices.
+   try{
+    Promise.resolve(originalStop.call(root)).catch(error=>
+     console.warn('[DW2 Regex] Native reorder failed',error)).finally(()=>schedule());
+   }catch(error){console.warn('[DW2 Regex] Native reorder failed',error);schedule();}
+   schedule();
+   return true;
   };
   const up=event=>{
    if(!gesture||event.pointerId!==gesture.pointerId)return;
-   const {row,moving}=gesture,target=moving?locate(event):null;
+   const {row,moving}=gesture,hit=moving?locate(event):null;
    clear();
-   if(target===null)return;
+   if(!hit)return;
    const key=scopeKey(scope);
    if(!key)return;
    const state=record(key),valid=new Set(state.groups.map(g=>g.id));
-   const next=target===DEFAULT_FOLDER?DEFAULT_FOLDER
-    :target===LOOSE_FOLDER?LOOSE_FOLDER
-    :valid.has(target)?target:LOOSE_FOLDER;
-   if(folderFor(state,row.id,valid)===next)return;
-   if(next===DEFAULT_FOLDER)delete state.entries[row.id];
-   else state.entries[row.id]=next;
+   const target=hit.gid===DEFAULT_FOLDER?DEFAULT_FOLDER
+    :hit.gid===LOOSE_FOLDER?LOOSE_FOLDER
+    :valid.has(hit.gid)?hit.gid:LOOSE_FOLDER;
+   const source=folderFor(state,row.id,valid);
+   if(source===target){
+    if(hit.row&&hit.row!==row)commitNativeSort(row,hit.row,hit.before);
+    return;
+   }
+   if(target===DEFAULT_FOLDER)delete state.entries[row.id];
+   else state.entries[row.id]=target;
    save();schedule();
   };
   const cancel=()=>clear();
@@ -459,6 +485,52 @@ export function createRegexFolders({enabled,getState,save,context}){
    outline.style.visibility='visible';
   }
  }
+ // TT's stock regex toggle reloads the whole list. On mobile, persist the
+ // existing native script directly and leave the mounted row untouched.
+ function applyRegexToggle(event,input,disabled){
+  if(!mobileNativeToggle||!enabled()||!nativeRegex||!input?.isConnected)return false;
+  const row=input.closest('.regex-script-label'),root=row?.parentElement;
+  if(!row||!mounted.has(root))return false;
+  const scope=CONTAINERS.find(([name,selector])=>document.querySelector(selector)===root)?.[0];
+  const type=scope&&nativeRegex.SCRIPT_TYPES?.[scope.toUpperCase()];
+  if(type===undefined||typeof nativeRegex.getScriptsByType!=='function'||
+     typeof nativeRegex.saveScriptsByType!=='function')return false;
+  let scripts,script;
+  try{
+   scripts=nativeRegex.getScriptsByType(type);
+   script=scripts?.find(item=>String(item?.id)===row.id);
+  }catch{return false;}
+  if(!script)return false;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  if(Boolean(script.disabled)===disabled&&input.checked===disabled)return true;
+  script.disabled=disabled;
+  input.checked=disabled;
+  const key=scopeKey(scope);
+  if(key)refreshCounts(root,nativeRows(root),record(key));
+  const previous=nativeSaveQueues.get(root)||Promise.resolve();
+  const next=previous.catch(()=>{}).then(async()=>{
+   await nativeRegex.saveScriptsByType(scripts,type);
+   context?.()?.saveSettingsDebounced?.();
+   nativeRegex.requestChatRefresh?.();
+  }).catch(error=>console.warn('[DW2 Regex] In-place toggle save failed',error));
+  nativeSaveQueues.set(root,next);
+  return true;
+ }
+ function captureRegexToggleClick(event){
+  if(!mobileNativeToggle||!enabled())return;
+  const target=event.target?.closest?.('.regex-toggle-on,.regex-toggle-off');
+  if(!target)return;
+  const row=target.closest('.regex-script-label');
+  const input=row?.querySelector('input.disable_regex');
+  if(!input)return;
+  applyRegexToggle(event,input,target.classList.contains('regex-toggle-on'));
+ }
+ function captureRegexToggleInput(event){
+  if(!mobileNativeToggle||!enabled()||!event.target?.matches?.('input.disable_regex'))return;
+  applyRegexToggle(event,event.target,Boolean(event.target.checked));
+ }
  function onRegexChange(event){
   if(!enabled()||!event.target?.matches?.('input.disable_regex'))return;
   const root=event.target.closest('.regex-script-container');
@@ -473,7 +545,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function sync(){
   if(!enabled())return disable();
-  if(!listening){document.addEventListener('change',onRegexChange);listening=true;}
+  if(!listening){document.addEventListener('change',onRegexChange);if(mobileNativeToggle){document.addEventListener('click',captureRegexToggleClick,true);document.addEventListener('input',captureRegexToggleInput,true);}listening=true;}
   const live=new Set();
   for(const [scope,selector] of CONTAINERS){
    const root=document.querySelector(selector);
@@ -493,7 +565,7 @@ export function createRegexFolders({enabled,getState,save,context}){
  }
  function disable(){
   refreshToken++;
-  if(listening){document.removeEventListener('change',onRegexChange);listening=false;}
+  if(listening){document.removeEventListener('change',onRegexChange);if(mobileNativeToggle){document.removeEventListener('click',captureRegexToggleClick,true);document.removeEventListener('input',captureRegexToggleInput,true);}listening=false;}
   for(const resize of observers.values())resize.disconnect();
   observers.clear();
   for(const frame of outlineFrames.values())cancelAnimationFrame(frame);

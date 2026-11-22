@@ -36,6 +36,7 @@ const folderFor=(state,scriptId,valid)=> {
 };
 export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
  const collapsed=new Map();const isCollapsed=key=>collapsed.get(key)??true;let timer=0,dialog=null;const mounted=new Set();let folderMenu=null;const snapshots=new WeakMap();const observers=new Map();const outlineFrames=new Map();const dragBindings=new Map(),nativeSortMemory=new Map(),nativeSaveQueues=new Map();let listening=false;let refreshToken=0;
+ let pendingEdit=null,editGuard=null;
  const mobileNativeToggle=typeof navigator!=='undefined'&&(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1));
  function node(tag,cls='',txt=''){const x=document.createElement(tag);x.className=cls;x.textContent=txt;return x;}
  function btn(label,fn,cls=''){const x=node('button',cls,label);x.type='button';x.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();});return x;}
@@ -531,6 +532,127 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
   if(!mobileNativeToggle||!enabled()||!event.target?.matches?.('input.disable_regex'))return;
   applyRegexToggle(event,event.target,Boolean(event.target.checked));
  }
+
+ // TT saves edited scripts by emptying and recreating every regex list.
+ // Protect scroll position and list heights during that native reload.
+ function editingScrollers(target){
+  const out=[],seen=new Set();
+  const add=el=>{if(el&&!seen.has(el)){seen.add(el);out.push(el);}};
+  for(let el=target?.parentElement;el;el=el.parentElement){
+   const style=window.getComputedStyle?.(el);
+   if(el.classList?.contains('scrollableInner')||
+      (/(auto|scroll|overlay)/.test(style?.overflowY||'')&&el.scrollHeight>el.clientHeight+2))add(el);
+  }
+  add(document.scrollingElement);
+  return out;
+ }
+ function correctRegexEditScroll(guard){
+  if(!guard)return;
+  const anchor=guard.anchorId?document.getElementById(guard.anchorId):null;
+  for(const entry of guard.scrolls){
+   const node=entry.node;
+   if(!node?.isConnected)continue;
+   if(anchor?.isConnected&&node.contains(anchor)&&entry.relative!==null){
+    const viewportTop=node===document.scrollingElement?0:node.getBoundingClientRect().top;
+    const delta=anchor.getBoundingClientRect().top-viewportTop-entry.relative;
+    if(Number.isFinite(delta)&&Math.abs(delta)>1.5)node.scrollTop+=delta;
+   }else if(Math.abs(node.scrollTop-entry.top)>1)node.scrollTop=entry.top;
+  }
+ }
+ function endRegexEditGuard(){
+  const guard=editGuard;
+  editGuard=null;
+  if(!guard)return;
+  if(guard.frame)cancelAnimationFrame(guard.frame);
+  for(const held of guard.heights){
+   if(!held.root.isConnected)continue;
+   if(held.value)held.root.style.setProperty('min-height',held.value,held.priority);
+   else held.root.style.removeProperty('min-height');
+  }
+  for(const entry of guard.scrolls){
+   const node=entry.node;
+   if(!node?.isConnected)continue;
+   if(entry.scrollBehavior)node.style.setProperty('scroll-behavior',entry.scrollBehavior,entry.scrollBehaviorPriority);
+   else node.style.removeProperty('scroll-behavior');
+   if(entry.overflowAnchor)node.style.setProperty('overflow-anchor',entry.overflowAnchor,entry.overflowAnchorPriority);
+   else node.style.removeProperty('overflow-anchor');
+  }
+  correctRegexEditScroll(guard);
+  requestAnimationFrame(()=>correctRegexEditScroll(guard));
+ }
+ function beginRegexEditGuard(){
+  endRegexEditGuard();
+  const settings=document.querySelector('#regex_container');
+  if(!settings)return;
+  const roots=CONTAINERS.map(([scope,selector])=>({scope,root:document.querySelector(selector)}))
+   .filter(item=>item.root?.isConnected);
+  if(!roots.length)return;
+  const anchorId=pendingEdit?.rowId||'';
+  const currentAnchor=anchorId?document.getElementById(anchorId):null;
+  const scrolls=editingScrollers(currentAnchor||settings).map(node=>{
+   const style=node.style;
+   const viewportTop=node===document.scrollingElement?0:node.getBoundingClientRect().top;
+   return {node,top:node.scrollTop,
+    relative:currentAnchor?.isConnected&&node.contains(currentAnchor)?
+     currentAnchor.getBoundingClientRect().top-viewportTop:null,
+    scrollBehavior:style.getPropertyValue('scroll-behavior'),
+    scrollBehaviorPriority:style.getPropertyPriority('scroll-behavior'),
+    overflowAnchor:style.getPropertyValue('overflow-anchor'),
+    overflowAnchorPriority:style.getPropertyPriority('overflow-anchor')};
+  });
+  const heights=roots.map(({scope,root})=>{
+   const value=root.style.getPropertyValue('min-height');
+   const priority=root.style.getPropertyPriority('min-height');
+   const measured=Math.ceil(root.getBoundingClientRect().height);
+   if(measured>0)root.style.setProperty('min-height',measured+'px','important');
+   return {scope,root,value,priority,count:nativeRows(root).length};
+  });
+  for(const entry of scrolls){
+   entry.node.style.setProperty('scroll-behavior','auto','important');
+   entry.node.style.setProperty('overflow-anchor','none','important');
+  }
+  const guard={anchorId,originalAnchor:currentAnchor,scrolls,heights,
+   targetScope:pendingEdit?.scope||'',started:performance.now(),frame:0};
+  editGuard=guard;
+  const tick=()=>{
+   if(editGuard!==guard)return;
+   correctRegexEditScroll(guard);
+   const elapsed=performance.now()-guard.started;
+   const current=guard.anchorId?document.getElementById(guard.anchorId):null;
+   const replaced=guard.anchorId?
+    Boolean(current?.isConnected&&current!==guard.originalAnchor):
+    guard.heights.some(held=>held.scope===guard.targetScope&&
+     nativeRows(held.root).length>held.count);
+   const countsReady=guard.heights.every(held=>
+    !held.root.isConnected||nativeRows(held.root).length>=held.count);
+   if((replaced&&countsReady&&elapsed>260)||elapsed>2600){
+    endRegexEditGuard();return;
+   }
+   guard.frame=requestAnimationFrame(tick);
+  };
+  guard.frame=requestAnimationFrame(tick);
+ }
+ function captureRegexEditorOpen(event){
+  const edit=event.target?.closest?.('.edit_existing_regex');
+  if(edit){
+   const row=edit.closest('.regex-script-label');
+   const root=row?.parentElement;
+   const scope=CONTAINERS.find(([,sel])=>document.querySelector(sel)===root)?.[0]||'';
+   pendingEdit=row?.id?{rowId:row.id,scope}:null;
+   return;
+  }
+  const trigger=event.target?.closest?.('#open_regex_editor,#open_preset_editor,#open_scoped_editor');
+  if(trigger){
+   const scope=trigger.id==='open_regex_editor'?'global':
+    trigger.id==='open_preset_editor'?'preset':'scoped';
+   pendingEdit={rowId:'',scope};
+  }
+ }
+ function captureRegexEditorSave(event){
+  if(!event.target?.closest?.('.popup-button-ok'))return;
+  if(!document.querySelector('.regex_editor'))return;
+  beginRegexEditGuard();pendingEdit=null;
+ }
  function onRegexChange(event){
   if(!enabled()||!event.target?.matches?.('input.disable_regex'))return;
   const root=event.target.closest('.regex-script-container');
@@ -545,7 +667,7 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
  }
  function sync(){
   if(!enabled())return disable();
-  if(!listening){document.addEventListener('change',onRegexChange);if(mobileNativeToggle){document.addEventListener('click',captureRegexToggleClick,true);document.addEventListener('input',captureRegexToggleInput,true);}listening=true;}
+  if(!listening){document.addEventListener('change',onRegexChange);document.addEventListener('click',captureRegexEditorOpen,true);document.addEventListener('click',captureRegexEditorSave,true);if(mobileNativeToggle){document.addEventListener('click',captureRegexToggleClick,true);document.addEventListener('input',captureRegexToggleInput,true);}listening=true;}
   const live=new Set();
   for(const [scope,selector] of CONTAINERS){
    const root=document.querySelector(selector);
@@ -565,7 +687,8 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
  }
  function disable(){
   refreshToken++;
-  if(listening){document.removeEventListener('change',onRegexChange);if(mobileNativeToggle){document.removeEventListener('click',captureRegexToggleClick,true);document.removeEventListener('input',captureRegexToggleInput,true);}listening=false;}
+  if(listening){document.removeEventListener('change',onRegexChange);document.removeEventListener('click',captureRegexEditorOpen,true);document.removeEventListener('click',captureRegexEditorSave,true);if(mobileNativeToggle){document.removeEventListener('click',captureRegexToggleClick,true);document.removeEventListener('input',captureRegexToggleInput,true);}listening=false;}
+   endRegexEditGuard();pendingEdit=null;
   for(const resize of observers.values())resize.disconnect();
   observers.clear();
   for(const frame of outlineFrames.values())cancelAnimationFrame(frame);

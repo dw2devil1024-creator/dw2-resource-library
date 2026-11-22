@@ -142,6 +142,12 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
    let originalStop;
    try{originalStop=$(root).sortable('option','stop');}catch{return false;}
    if(typeof originalStop!=='function')return false;
+   // Avoid a full native list reload when the row is dropped in its old slot.
+   if((before&&row.nextElementSibling===target)||
+      (!before&&target.nextElementSibling===row))return true;
+   // The native stop handler saves actual regex execution order, but also
+   // recreates all three lists. Hold scroll/height before touching that DOM.
+   beginRegexEditGuard({rowId:target.id,scope});
    if(before)root.insertBefore(row,target);
    else root.insertBefore(row,target.nextSibling);
    // Use TT's own sortable stop callback. It persists the actual regex order
@@ -580,14 +586,14 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
   correctRegexEditScroll(guard);
   requestAnimationFrame(()=>correctRegexEditScroll(guard));
  }
- function beginRegexEditGuard(){
+ function beginRegexEditGuard(details=pendingEdit){
   endRegexEditGuard();
   const settings=document.querySelector('#regex_container');
   if(!settings)return;
   const roots=CONTAINERS.map(([scope,selector])=>({scope,root:document.querySelector(selector)}))
    .filter(item=>item.root?.isConnected);
   if(!roots.length)return;
-  const anchorId=pendingEdit?.rowId||'';
+  const anchorId=details?.rowId||'';
   const currentAnchor=anchorId?document.getElementById(anchorId):null;
   const scrolls=editingScrollers(currentAnchor||settings).map(node=>{
    const style=node.style;
@@ -612,7 +618,7 @@ export function createRegexFolders({enabled,getState,save,context,nativeRegex}){
    entry.node.style.setProperty('overflow-anchor','none','important');
   }
   const guard={anchorId,originalAnchor:currentAnchor,scrolls,heights,
-   targetScope:pendingEdit?.scope||'',started:performance.now(),frame:0};
+   targetScope:details?.scope||'',started:performance.now(),frame:0};
   editGuard=guard;
   const tick=()=>{
    if(editGuard!==guard)return;
